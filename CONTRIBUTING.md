@@ -51,6 +51,29 @@ We use the [Developer Certificate of Origin](https://developercertificate.org/) 
 git commit -s -m "Add MySQL connector"
 ```
 
+This adds a `Signed-off-by: Your Name <you@example.com>` line using your `user.name` and `user.email` from git config. That email must match the commit author, or the DCO check will fail.
+
+A DCO check runs on every pull request. If it fails because a commit is missing a sign-off, fix it like this:
+
+```bash
+# Sign off the last commit
+git commit --amend --signoff --no-edit
+
+# Or sign off every commit in your branch
+git rebase --signoff main
+
+# Then update the pull request
+git push --force-with-lease
+```
+
+Tip: to avoid forgetting, set an alias and use `git cs` instead of `git commit`:
+
+```bash
+git config --global alias.cs "commit -s"
+```
+
+Commits made in the GitHub web editor are signed off automatically.
+
 ## Writing a connector
 
 A connector lets Quorlo read metadata from a platform, and optionally write approved metadata back. A good connector:
