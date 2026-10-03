@@ -17,6 +17,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
+from quorlo.history.findings import FindingQuery
 from quorlo.history.models import RunHeader, RunTarget, ScanRun
 from quorlo.history.store.base import (
     FindingChanges,
@@ -71,6 +72,7 @@ class _FindingRows:
         f"INSERT INTO findings (run_id, fingerprint, {', '.join(FIELDS.values())}) "
         f"VALUES ({', '.join('?' * (len(FIELDS) + 2))})"
     )
+    SELECT_ALL: ClassVar[str] = f"SELECT {', '.join(FIELDS.values())} FROM findings"
     SELECT: ClassVar[str] = (
         f"SELECT {', '.join(FIELDS.values())} FROM findings WHERE run_id = ? ORDER BY rowid"
     )
@@ -83,6 +85,40 @@ class _FindingRows:
     @classmethod
     def finding(cls, row: sqlite3.Row) -> Finding:
         return Finding(**{field: row[column] for field, column in cls.FIELDS.items()})
+
+
+def _like_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+class _FindingFilter:
+    """Turns a FindingQuery into an SQL condition, so filtering never loads a whole run."""
+
+    def __init__(self, query: FindingQuery) -> None:
+        self._query = query
+
+    def sql(self) -> tuple[str, list[object]]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if self._query.tables:
+            # The table itself, or any table whose qualified name ends in ".<value>".
+            clauses.append(
+                "("
+                + " OR ".join(
+                    "table_name = ? OR table_name LIKE ? ESCAPE '\\'" for _ in self._query.tables
+                )
+                + ")"
+            )
+            for table in self._query.tables:
+                params += [table, f"%.{_like_escape(table)}"]
+        for column, values in (
+            ("dimension", [d.value for d in self._query.dimensions]),
+            ("check_id", list(self._query.checks)),
+        ):
+            if values:
+                clauses.append(f"{column} IN ({', '.join('?' * len(values))})")
+                params += values
+        return "".join(f" AND {c}" for c in clauses), params
 
 
 class SqliteRunWriter:
@@ -260,8 +296,12 @@ class SqliteRunStore:
         for row in rows:
             yield Schema.model_validate_json(zlib.decompress(row["snapshot"]))
 
-    def findings(self, run_id: str) -> Iterator[Finding]:
-        rows = self._conn.execute(_FindingRows.SELECT, (self._resolve(run_id)["id"],))
+    def findings(self, run_id: str, query: FindingQuery | None = None) -> Iterator[Finding]:
+        where, params = _FindingFilter(query or FindingQuery()).sql()
+        rows = self._conn.execute(
+            f"{_FindingRows.SELECT_ALL} WHERE run_id = ?{where} ORDER BY table_name, rowid",
+            (self._resolve(run_id)["id"], *params),
+        )
         for row in rows:
             yield _FindingRows.finding(row)
 
@@ -298,7 +338,7 @@ class SqliteRunStore:
 
     def _resolve(self, run_id: str) -> sqlite3.Row:
         """The finished run with this id, or the only one whose id starts with it."""
-        pattern = run_id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        pattern = _like_escape(run_id) + "%"
         rows = self._conn.execute(
             f"SELECT * FROM runs WHERE status = '{_COMPLETE}' "
             "AND (id = ? OR id LIKE ? ESCAPE '\\') ORDER BY id LIMIT 2",

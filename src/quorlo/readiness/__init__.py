@@ -10,7 +10,7 @@ from quorlo.readiness.base import (
     Severity,
     TableCheck,
 )
-from quorlo.readiness.checks import DEFAULT_CHECKS
+from quorlo.readiness.checks import CHECKS_BY_ID, DEFAULT_CHECKS
 from quorlo.readiness.engine import (
     Assessment,
     CheckResult,
@@ -25,6 +25,7 @@ from quorlo.readiness.engine import (
 )
 
 __all__ = [
+    "CHECKS_BY_ID",
     "DEFAULT_CHECKS",
     "Assessment",
     "Check",

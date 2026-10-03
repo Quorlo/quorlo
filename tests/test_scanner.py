@@ -93,7 +93,9 @@ def test_saved_scan_records_report_stats_and_findings(store):
     assert run.stats == stats
     assert len(run.findings) == outcome.report.finding_count > 0
     assert [s.name for s in store.snapshot(run.id)] == ["s0", "s1", "s2"]
-    assert list(scanner.findings(outcome)) == list(run.findings)
+    # The store returns findings grouped by table, so compare them regardless of order.
+    streamed = list(scanner.findings(outcome))
+    assert sorted(f.fingerprint for f in streamed) == sorted(f.fingerprint for f in run.findings)
 
 
 def test_schemas_are_saved_as_they_stream(store):
