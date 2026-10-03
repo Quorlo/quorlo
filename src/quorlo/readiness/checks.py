@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Iterable
 from typing import ClassVar
 
 from quorlo.models import Column, Table, TableKind, TypeKind
 from quorlo.readiness.base import Check, Dimension, Finding, ScanContext, Scope, Severity
-from quorlo.readiness.names import cryptic_reason, is_freshness_column_name, pii_category
+from quorlo.readiness.names import (
+    concept_key,
+    cryptic_reason,
+    is_freshness_column_name,
+    pii_category,
+)
 
 
 class _BaseCheck:
@@ -179,6 +185,59 @@ class FreshnessUntracked(_BaseCheck):
             )
 
 
+_STATUS_DESCRIPTION = re.compile(
+    r"\b(certified|source of truth|deprecated|superseded|do not use)\b", re.I
+)
+_STATUS_TAGS = frozenset({"certified", "deprecated"})
+
+
+def declares_status(table: Table) -> bool:
+    """Says whether it is the trusted source or a stale copy, by tag or in its description."""
+    if any(tag.lower() in _STATUS_TAGS for tag in table.tags):
+        return True
+    return bool(table.description and _STATUS_DESCRIPTION.search(table.description))
+
+
+def column_type_overlap(a: Table, b: Table) -> float:
+    """Share of column types two tables have in common, from 0 to 1 (multiset Jaccard)."""
+    kinds_a = Counter(c.data_type.kind for c in a.columns)
+    kinds_b = Counter(c.data_type.kind for c in b.columns)
+    union = sum((kinds_a | kinds_b).values())
+    return sum((kinds_a & kinds_b).values()) / union if union else 0.0
+
+
+class DuplicateSuspected(_BaseCheck):
+    id = "table.duplicate.suspected"
+    dimension = Dimension.CERTIFICATION
+    scope = Scope.TABLE
+    severity = Severity.MEDIUM
+    weight = 1.0
+    description = "No other table looks like the same thing without saying which one to use."
+
+    min_type_overlap: ClassVar[float] = 0.5
+
+    def is_duplicate(self, a: Table, b: Table) -> bool:
+        key = concept_key(a.name)
+        return (
+            bool(key)
+            and key == concept_key(b.name)
+            and column_type_overlap(a, b) >= self.min_type_overlap
+        )
+
+    def run(self, table: Table, context: ScanContext) -> Iterable[Finding]:
+        for other in context.others(table):
+            if self.is_duplicate(table, other) and not (
+                declares_status(table) or declares_status(other)
+            ):
+                other_name = f"{other.ref.schema_name}.{other.name}"
+                yield self._finding(
+                    table,
+                    f"Looks like the same data as {other_name}, and neither says which to use.",
+                    "Mark the trusted table as certified (a tag, or 'source of truth' in its "
+                    "description), and the other as deprecated, or remove one.",
+                )
+
+
 DEFAULT_CHECKS: tuple[Check, ...] = (
     TableDescriptionMissing(),
     ColumnDescriptionMissing(),
@@ -186,4 +245,5 @@ DEFAULT_CHECKS: tuple[Check, ...] = (
     ColumnNameCryptic(),
     PiiUnclassified(),
     FreshnessUntracked(),
+    DuplicateSuspected(),
 )

@@ -120,3 +120,18 @@ FRESHNESS_WORDS = frozenset(
 def is_freshness_column_name(name: str) -> bool:
     """True for names like updated_at, last_modified, _etl_loaded_at or ingestion_ts."""
     return bool(FRESHNESS_WORDS & set(tokens(name)))
+
+
+# --- Duplicates ----------------------------------------------------------------------
+# Words that mark a version or copy of a table rather than what it holds.
+COPY_MARKERS = frozenset(
+    {"v", "old", "new", "bak", "backup", "copy", "tmp", "temp", "final", "latest", "prev"}
+)
+
+
+def concept_key(table_name: str) -> frozenset[str]:
+    """What a table is about, ignoring word order and version or copy markers.
+
+    revenue_daily and daily_revenue_v2 both give {'daily', 'revenue'}.
+    """
+    return frozenset(w for w in tokens(table_name) if not w.isdigit() and w not in COPY_MARKERS)
