@@ -6,21 +6,21 @@ Quorlo measures how ready a table is for an AI agent, as scores between 0% and 1
 
 Every check answers exactly one of the five questions. In the code these are the members of `quorlo.readiness.Dimension`:
 
-| Dimension | Question | Status |
-| --- | --- | --- |
-| `meaning` | What is it? | 4 checks |
-| `certification` | Is it the right one? | planned |
-| `trust` | Can I trust it? | planned |
-| `lineage` | Where did it come from? | planned |
-| `governance` | Am I allowed to use it? | planned |
+| Dimension | Question | Shown as | Checks |
+| --- | --- | --- | --- |
+| `meaning` | What is it? | Meaning | descriptions, primary key, readable names |
+| `certification` | Is it the right one? | Certified | near-duplicate tables |
+| `trust` | Can I trust it? | Trust | freshness column |
+| `lineage` | Where did it come from? | Lineage | planned: needs dbt or OpenLineage input |
+| `governance` | Am I allowed to use it? | Governed | unmarked personal data |
 
 A dimension with no checks is reported as *not scored yet*, never as 0% or 100%. Scores are always shown per dimension, because one opaque number can't tell a data owner what kind of gap they have.
 
 ## Checks and findings
 
-A check looks at one table and reports only what is wrong, as **findings**. Each check declares:
+A check looks at one table and reports only what is wrong, as **findings**. It can also see every other scanned table, which is how near-duplicates are found. Each check declares:
 
-- a **scope**: `table` (judges the table as a whole) or `column` (judges each column);
+- a **scope**: `table` (one verdict for the whole table) or `column` (one per column). The personal-data check is table-scoped on purpose: one unmarked column is enough to make a table unsafe to use, though its findings still name each column;
 - a **severity**: `low`, `medium` or `high`;
 - a **weight**: how much it counts towards the score;
 - which tables it **applies to**. For example, views are not expected to have a primary key.
@@ -37,13 +37,13 @@ Checks never compute scores; the engine does, in three steps.
 pass rate = 1 - findings / units evaluated
 ```
 
-**2. Each table gets a weighted average of its checks' pass rates**: overall, and per dimension using only that dimension's checks.
+**2. Each table gets a weighted average of its checks' pass rates**: per dimension using only that dimension's checks, and overall using all of them.
 
 **3. A scan's scores are the average of its tables' scores.**
 
 ### Example
 
-A table with 20 columns, all documented and readably named, a primary key, but no table description:
+The *Meaning* score of a table with 20 columns, all documented and readably named, with a primary key but no table description:
 
 | Check | Weight | Pass rate |
 | --- | --- | --- |
@@ -52,7 +52,7 @@ A table with 20 columns, all documented and readably named, a primary key, but n
 | `table.primary_key.missing` | 1 | 1 / 1 → 100% |
 | `column.name.cryptic` | 1 | 20 / 20 → 100% |
 
-Score = (2 × 0 + 1 × 1 + 1 × 1 + 1 × 1) / 5 = **60%**.
+Meaning = (2 × 0 + 1 × 1 + 1 × 1 + 1 × 1) / 5 = **60%**.
 
 Averaging per check, rather than counting every column as a unit, keeps a wide table's column checks from drowning out its table-level checks. Counted per unit, this table would score about 95% despite having no description at all.
 
