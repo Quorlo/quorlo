@@ -1,8 +1,10 @@
 -- Quorlo demo schema: a deliberately messy retail database.
 --
 -- Every problem here is on purpose: cryptic names, undocumented status codes, a table
--- without a primary key, near-duplicate tables, a staging dump with positional column
--- names. dim_product is the one well-documented table, so a scan shows a range of scores.
+-- without a primary key, personal data nobody marked as such, near-duplicate tables
+-- that don't say which to use, no way to tell how fresh anything is, and a staging dump
+-- with positional column names. dim_product is the one table that gets everything
+-- right, so a scan shows a range of scores.
 --
 -- All personal data below is fake: example.com addresses, 555-01xx phone numbers.
 
@@ -102,7 +104,8 @@ CREATE TABLE dim_product (
     product_name  varchar(200) NOT NULL,
     category      varchar(100) NOT NULL,
     list_price    numeric(10, 2) NOT NULL,
-    is_active     boolean NOT NULL DEFAULT true
+    is_active     boolean NOT NULL DEFAULT true,
+    updated_at    timestamptz NOT NULL DEFAULT now()
 );
 COMMENT ON TABLE dim_product IS 'Product dimension. One row per sellable product; the source of truth for product names and list prices.';
 COMMENT ON COLUMN dim_product.product_id IS 'Product identifier, referenced by ord_ln.prod_id.';
@@ -110,8 +113,9 @@ COMMENT ON COLUMN dim_product.product_name IS 'Display name shown to customers.'
 COMMENT ON COLUMN dim_product.category IS 'Merchandising category, e.g. "Kitchen" or "Garden".';
 COMMENT ON COLUMN dim_product.list_price IS 'Current list price in USD, before discounts and tax.';
 COMMENT ON COLUMN dim_product.is_active IS 'True while the product can be ordered; false once discontinued.';
+COMMENT ON COLUMN dim_product.updated_at IS 'When the nightly load last changed this row.';
 
-INSERT INTO dim_product VALUES
+INSERT INTO dim_product (product_id, product_name, category, list_price, is_active) VALUES
     (10, 'Chef Knife',     'Kitchen', 50.25, true),
     (11, 'Cutting Board',  'Kitchen', 20.00, true),
     (12, 'Garden Hose',    'Garden',  35.00, true),
