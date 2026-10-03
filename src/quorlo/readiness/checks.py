@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Iterable
 from typing import ClassVar
 
-from quorlo.models import Table, TableKind
-from quorlo.readiness.base import Check, Dimension, Finding, Scope, Severity
+from quorlo.models import Column, Table, TableKind, TypeKind
+from quorlo.readiness.base import Check, Dimension, Finding, ScanContext, Scope, Severity
+from quorlo.readiness.names import (
+    concept_key,
+    cryptic_reason,
+    is_freshness_column_name,
+    pii_category,
+)
 
 
 class _BaseCheck:
@@ -46,7 +53,7 @@ class TableDescriptionMissing(_BaseCheck):
     weight = 2.0
     description = "The table has a business description."
 
-    def run(self, table: Table) -> Iterable[Finding]:
+    def run(self, table: Table, context: ScanContext) -> Iterable[Finding]:
         if _blank(table.description):
             yield self._finding(
                 table,
@@ -63,7 +70,7 @@ class ColumnDescriptionMissing(_BaseCheck):
     weight = 1.0
     description = "Each column has a description."
 
-    def run(self, table: Table) -> Iterable[Finding]:
+    def run(self, table: Table, context: ScanContext) -> Iterable[Finding]:
         for col in table.columns:
             if _blank(col.description):
                 yield self._finding(
@@ -86,49 +93,13 @@ class PrimaryKeyMissing(_BaseCheck):
         # Views and foreign tables cannot declare one, so they are not penalised for it.
         return table.kind in (TableKind.TABLE, TableKind.OTHER)
 
-    def run(self, table: Table) -> Iterable[Finding]:
+    def run(self, table: Table, context: ScanContext) -> Iterable[Finding]:
         if not table.has_primary_key:
             yield self._finding(
                 table,
                 "Table has no primary key.",
                 "Declare a primary key, or document which columns identify a row.",
             )
-
-
-# Abbreviations common in legacy schemas that an agent cannot reliably expand.
-CRYPTIC_ABBREVIATIONS = frozenset(
-    {"amt", "qty", "dt", "cd", "nm", "flg", "st", "addr", "eml", "cnt", "typ", "ind"}
-)
-# Short tokens that are widely understood and should not be flagged.
-ALLOWED_SHORT_TOKENS = frozenset(
-    {"id", "url", "uri", "sku", "ip", "utc", "iso", "api", "gps", "vat", "http", "html"}
-)
-_VOWELS = set("aeiouy")
-_GENERIC_NAME = re.compile(r"^[a-z]{1,3}_?\d+$")  # col1, c2, f_3
-_TOKEN = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+")
-
-
-def _tokens(name: str) -> list[str]:
-    return [t.lower() for t in _TOKEN.findall(name)]
-
-
-def cryptic_reason(name: str) -> str | None:
-    """Why a column name is hard for an agent to interpret, or None if it reads fine."""
-    lowered = name.lower()
-    if lowered in ALLOWED_SHORT_TOKENS:
-        return None
-    if _GENERIC_NAME.match(lowered):
-        return "generic positional name"
-    if len(lowered) <= 2:
-        return "name is too short to carry meaning"
-    for token in _tokens(name):
-        if token.isdigit() or len(token) < 2 or token in ALLOWED_SHORT_TOKENS:
-            continue
-        if token in CRYPTIC_ABBREVIATIONS:
-            return f"abbreviation '{token}'"
-        if not _VOWELS & set(token):
-            return f"abbreviation '{token}'"
-    return None
 
 
 class ColumnNameCryptic(_BaseCheck):
@@ -139,7 +110,7 @@ class ColumnNameCryptic(_BaseCheck):
     weight = 1.0
     description = "Column names are readable words, not cryptic abbreviations."
 
-    def run(self, table: Table) -> Iterable[Finding]:
+    def run(self, table: Table, context: ScanContext) -> Iterable[Finding]:
         for col in table.columns:
             reason = cryptic_reason(col.name)
             if reason:
@@ -151,9 +122,128 @@ class ColumnNameCryptic(_BaseCheck):
                 )
 
 
+PII_TAGS = frozenset({"pii", "personal", "personal_data", "sensitive", "gdpr"})
+_PII_DESCRIPTION = re.compile(
+    r"\b(pii|personal data|personally identifiable|personal information|sensitive)\b", re.I
+)
+
+
+def is_classified_as_pii(column: Column) -> bool:
+    """Marked as personal data, by a platform tag or, where there are no tags, its description."""
+    if any(tag.lower() in PII_TAGS or tag.lower().startswith("pii") for tag in column.tags):
+        return True
+    return bool(column.description and _PII_DESCRIPTION.search(column.description))
+
+
+class PiiUnclassified(_BaseCheck):
+    id = "column.pii.unclassified"
+    dimension = Dimension.GOVERNANCE
+    # Scored per table: one unmarked personal-data column is enough to make the whole
+    # table unsafe for an agent to use. Findings still name each column.
+    scope = Scope.TABLE
+    severity = Severity.HIGH
+    weight = 1.0
+    description = "Columns that look like personal data are marked as such."
+
+    def run(self, table: Table, context: ScanContext) -> Iterable[Finding]:
+        for col in table.columns:
+            category = pii_category(col.name, table.name, col.data_type.raw)
+            if category and not is_classified_as_pii(col):
+                yield self._finding(
+                    table,
+                    f"Column looks like personal data ({category}) but is not marked as PII.",
+                    "Tag the column as PII, or say so in its description, so agents and "
+                    "access policies can treat it accordingly.",
+                    column=col.name,
+                )
+
+
+class FreshnessUntracked(_BaseCheck):
+    id = "table.freshness.untracked"
+    dimension = Dimension.TRUST
+    scope = Scope.TABLE
+    severity = Severity.MEDIUM
+    weight = 1.0
+    description = "The table has a column that tells an agent how fresh its data is."
+
+    def applies_to(self, table: Table) -> bool:
+        # A view is as fresh as the tables it reads; those are checked instead.
+        return table.kind in (TableKind.TABLE, TableKind.MATERIALIZED_VIEW, TableKind.OTHER)
+
+    def run(self, table: Table, context: ScanContext) -> Iterable[Finding]:
+        has_freshness_column = any(
+            col.data_type.kind in (TypeKind.TIMESTAMP, TypeKind.DATE)
+            and is_freshness_column_name(col.name)
+            for col in table.columns
+        )
+        if not has_freshness_column:
+            yield self._finding(
+                table,
+                "No column shows when rows were last loaded or updated.",
+                "Add a timestamp such as updated_at or loaded_at, maintained by the load "
+                "process, so agents can tell whether the data is current.",
+            )
+
+
+_STATUS_DESCRIPTION = re.compile(
+    r"\b(certified|source of truth|deprecated|superseded|do not use)\b", re.I
+)
+_STATUS_TAGS = frozenset({"certified", "deprecated"})
+
+
+def declares_status(table: Table) -> bool:
+    """Says whether it is the trusted source or a stale copy, by tag or in its description."""
+    if any(tag.lower() in _STATUS_TAGS for tag in table.tags):
+        return True
+    return bool(table.description and _STATUS_DESCRIPTION.search(table.description))
+
+
+def column_type_overlap(a: Table, b: Table) -> float:
+    """Share of column types two tables have in common, from 0 to 1 (multiset Jaccard)."""
+    kinds_a = Counter(c.data_type.kind for c in a.columns)
+    kinds_b = Counter(c.data_type.kind for c in b.columns)
+    union = sum((kinds_a | kinds_b).values())
+    return sum((kinds_a & kinds_b).values()) / union if union else 0.0
+
+
+class DuplicateSuspected(_BaseCheck):
+    id = "table.duplicate.suspected"
+    dimension = Dimension.CERTIFICATION
+    scope = Scope.TABLE
+    severity = Severity.MEDIUM
+    weight = 1.0
+    description = "No other table looks like the same thing without saying which one to use."
+
+    min_type_overlap: ClassVar[float] = 0.5
+
+    def is_duplicate(self, a: Table, b: Table) -> bool:
+        key = concept_key(a.name)
+        return (
+            bool(key)
+            and key == concept_key(b.name)
+            and column_type_overlap(a, b) >= self.min_type_overlap
+        )
+
+    def run(self, table: Table, context: ScanContext) -> Iterable[Finding]:
+        for other in context.others(table):
+            if self.is_duplicate(table, other) and not (
+                declares_status(table) or declares_status(other)
+            ):
+                other_name = f"{other.ref.schema_name}.{other.name}"
+                yield self._finding(
+                    table,
+                    f"Looks like the same data as {other_name}, and neither says which to use.",
+                    "Mark the trusted table as certified (a tag, or 'source of truth' in its "
+                    "description), and the other as deprecated, or remove one.",
+                )
+
+
 DEFAULT_CHECKS: tuple[Check, ...] = (
     TableDescriptionMissing(),
     ColumnDescriptionMissing(),
     PrimaryKeyMissing(),
     ColumnNameCryptic(),
+    PiiUnclassified(),
+    FreshnessUntracked(),
+    DuplicateSuspected(),
 )

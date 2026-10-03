@@ -61,3 +61,11 @@ def test_database_iter_tables():
         ),
     )
     assert [t.name for t in db.iter_tables()] == ["t1", "t2", "t3"]
+
+
+def test_tags_default_empty_and_are_labels():
+    table = make_table(columns=[make_column("email")])
+    assert table.tags == ()
+    assert table.columns[0].tags == ()
+    tagged = table.columns[0].model_copy(update={"tags": ("pii",)})
+    assert tagged.tags == ("pii",)

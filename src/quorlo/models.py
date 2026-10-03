@@ -85,6 +85,10 @@ class Column(_Frozen):
     default: str | None = Field(
         default=None, description="Default expression as declared in the schema, not a value."
     )
+    tags: tuple[str, ...] = Field(
+        default=(),
+        description="Platform tags or classifications, e.g. 'pii'. Labels, never values.",
+    )
 
 
 class Table(_Frozen):
@@ -97,6 +101,9 @@ class Table(_Frozen):
     foreign_keys: tuple[ForeignKey, ...] = ()
     row_count_estimate: int | None = Field(
         default=None, description="From catalog statistics; never from counting rows."
+    )
+    tags: tuple[str, ...] = Field(
+        default=(), description="Platform tags or classifications, e.g. 'certified'."
     )
     ref: TableRef
 

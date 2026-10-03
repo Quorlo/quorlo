@@ -12,7 +12,9 @@ from quorlo import registry
 from quorlo.cli import app
 from quorlo.connector import ConnectionConfig, ConnectorCapabilities, ConnectorError
 from quorlo.models import Database, Schema
+from quorlo.readiness import evaluate
 from quorlo.registry import ConnectorInfo
+from quorlo.render import _name_prefix
 
 runner = CliRunner()
 
@@ -98,8 +100,14 @@ def test_connectors_lists_capabilities_and_errors(stub_registry):
 def test_scan_table_output(stub_registry):
     result = runner.invoke(app, ["scan", "-c", "stub", "--dsn", "stub://", "--details"])
     assert result.exit_code == 0, result.output
-    assert "db.public.customers" in result.output
-    assert "db.public.stg_imp" in result.output
+    title, rows = result.output.split("\n", 1)
+    summary = rows.split("Overall", 1)[0]
+    # One schema scanned: it moves to the title and rows show bare table names.
+    assert "AI readiness: db.public (stub)" in title
+    assert "customers" in summary
+    assert "stg_imp" in summary
+    assert "public." not in summary
+    assert "…" not in result.output
     assert "Overall" in result.output
     assert "column.name.cryptic" in result.output
 
@@ -109,9 +117,8 @@ def test_scan_json_output(stub_registry):
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     scores = {t["table"]: t["score"] for t in data["tables"]}
-    assert scores["db.public.customers"] == 1.0
-    assert scores["db.public.stg_imp"] == 0.0
-    assert data["score"] == 0.5
+    assert scores["db.public.customers"] > scores["db.public.stg_imp"]
+    assert data["score"] == pytest.approx(sum(scores.values()) / 2)
     assert data["findings_count"] == len([f for t in data["tables"] for f in t["findings"]])
 
 
@@ -141,10 +148,22 @@ def test_scan_connector_error(stub_registry):
     assert "could not connect" in result.output
 
 
-def test_scan_details_shows_full_targets_without_database_prefix(stub_registry):
+def test_scan_details_shows_full_targets_without_shared_prefix(stub_registry):
     result = runner.invoke(app, ["scan", "-c", "stub", "--dsn", "stub://", "--details"])
     assert result.exit_code == 0, result.output
-    findings = result.output.split("Findings in db", 1)[1]
-    assert "public.stg_imp.c1" in findings
-    assert "db.public" not in findings
+    findings = result.output.split("Findings in db.public", 1)[1]
+    assert "stg_imp.c1" in findings
+    assert "public." not in findings
     assert "…" not in findings
+
+
+def test_scan_keeps_schema_in_names_when_several_schemas():
+    db = Database(
+        name="db",
+        platform="stub",
+        schemas=(
+            Schema(name="raw", tables=(make_table("orders", schema="raw"),)),
+            Schema(name="mart", tables=(make_table("orders", schema="mart"),)),
+        ),
+    )
+    assert _name_prefix(evaluate(db)) == "db."

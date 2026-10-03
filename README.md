@@ -4,7 +4,7 @@
 
 **Documentation:** https://quorlo.github.io/quorlo/
 
-> **Status: pre-alpha.** The first slice works: a read-only Postgres scan with a readiness score for the "What is it?" question. Enrichment, review and write-back are still being designed, and nothing is published to PyPI yet. Ideas, use cases and design feedback are very welcome in [Discussions](https://github.com/Quorlo/quorlo/discussions).
+> **Status: pre-alpha.** The first slice works: a read-only Postgres scan that scores four of the five readiness questions. Enrichment, review and write-back are still being designed, and nothing is published to PyPI yet. Ideas, use cases and design feedback are very welcome in [Discussions](https://github.com/Quorlo/quorlo/discussions).
 
 ## Quickstart
 
@@ -21,25 +21,28 @@ uv run quorlo scan
 ```
 
 ```
-                       AI readiness: quorlo_demo (postgres)
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┓
-┃ Table                                   ┃ Kind  ┃ Score ┃ Meaning ┃ Findings ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━┩
-│ quorlo_demo.retail_raw.stg_imp_01       │ table │    0% │      0% │       10 │
-│ quorlo_demo.retail_raw.ord_ln           │ table │    8% │      8% │       10 │
-│ quorlo_demo.retail_raw.v_ord_summary    │ view  │   10% │     10% │        9 │
-│ quorlo_demo.retail_raw.daily_revenue_v2 │ table │   20% │     20% │        7 │
-│ quorlo_demo.retail_raw.cust_mstr        │ table │   24% │     24% │       17 │
-│ quorlo_demo.retail_raw.revenue_daily    │ table │   40% │     40% │        3 │
-│ quorlo_demo.retail_raw.ord_hdr          │ table │   68% │     68% │        8 │
-│ quorlo_demo.retail_raw.dim_product      │ table │  100% │    100% │        0 │
-└─────────────────────────────────────────┴───────┴───────┴─────────┴──────────┘
-Overall: 34% across 8 tables, 64 findings
+                 AI readiness: quorlo_demo.retail_raw (postgres)
+
+ Table                  Score   Meaning   Certified   Trust   Governed   Findings
+ ────────────────────────────────────────────────────────────────────────────────
+ daily_revenue_v2         25%       20%          0%      0%       100%          9
+ stg_imp_01               25%        0%        100%      0%       100%         11
+ cust_mstr                28%       24%        100%      0%         0%         23
+ ord_ln                   30%        8%        100%      0%       100%         11
+ revenue_daily            38%       40%          0%      0%       100%          5
+ v_ord_summary (view)     40%       10%        100%     n/a       100%          9
+ ord_hdr                  68%       68%        100%      0%       100%          9
+ dim_product             100%      100%        100%    100%       100%          0
+
+Overall: 44% across 8 tables, 77 findings
   What is it?               34%
-  Not scored yet (no checks): certification, trust, lineage, governance
+  Is it the right one?      75%
+  Can I trust it?           14%
+  Am I allowed to use it?   88%
+  Not scored yet (no checks): lineage
 ```
 
-`stg_imp_01` has columns named `c1`, `c2`, `f1` and `f2` and no documentation, so it scores 0%. `dim_product` is fully described and keyed, so it scores 100%.
+Each problem shows up under the question it gets in the way of. `stg_imp_01` has columns named `c1`, `c2`, `f1` and `f2` and no documentation, so it scores 0% on *Meaning*. `cust_mstr` holds names, emails and phone numbers nobody marked as personal data, so it fails *Governed*. `revenue_daily` and `daily_revenue_v2` look like the same data and neither says which to use, so both fail *Certified*. Almost nothing records when it was last loaded, so *Trust* is low everywhere. `dim_product` gets everything right and scores 100%.
 
 More options:
 
@@ -52,7 +55,7 @@ uv run quorlo connectors                  # installed connectors and what they m
 
 The scan reads only Postgres system catalogs, over a connection the driver marks read-only. It never selects from your tables. Row counts come from planner statistics.
 
-Today's checks all answer "What is it?": missing table descriptions, missing column descriptions, missing primary keys and cryptic column names. Checks for the other four questions come next.
+Checks cover four of the five questions so far: descriptions, keys and readable names (*What is it?*), near-duplicate tables (*Is it the right one?*), freshness columns (*Can I trust it?*) and unmarked personal data (*Am I allowed to use it?*). Lineage comes later.
 
 ## Why
 

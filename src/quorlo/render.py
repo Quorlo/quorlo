@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 
+from rich import box
 from rich.console import Console
 from rich.table import Table as RichTable
 from rich.text import Text
 
+from quorlo.models import TableKind
 from quorlo.readiness import Dimension, ScanReport
 
 
@@ -18,21 +20,46 @@ def _score_text(score: float | None) -> Text:
     return Text(f"{score:.0%}", style=style)
 
 
+# Short, whole-word headers so they never truncate in an 80-column terminal.
+# The full question for each dimension is printed under the table.
+_HEADERS = {
+    Dimension.MEANING: "Meaning",
+    Dimension.CERTIFICATION: "Certified",
+    Dimension.TRUST: "Trust",
+    Dimension.LINEAGE: "Lineage",
+    Dimension.GOVERNANCE: "Governed",
+}
+
+
+def _name_prefix(report: ScanReport) -> str:
+    """What every table name starts with: the database, plus the schema if there is only one."""
+    schemas = {t.table.split(".")[1] for t in report.tables if t.table.count(".") >= 2}
+    if len(schemas) == 1:
+        return f"{report.database}.{schemas.pop()}."
+    return f"{report.database}."
+
+
 def render_report(report: ScanReport, console: Console, details: bool = False) -> None:
     dims = [d for d in Dimension if d in report.dimensions]
+    prefix = _name_prefix(report)
+    scope = prefix.rstrip(".")
 
-    summary = RichTable(title=f"AI readiness: {report.database} ({report.platform})")
-    summary.add_column("Table")
-    summary.add_column("Kind", style="dim")
-    summary.add_column("Score", justify="right")
+    summary = RichTable(
+        title=f"AI readiness: {scope} ({report.platform})", box=box.SIMPLE_HEAD, pad_edge=False
+    )
+    # Fold rather than truncate: a name cut to "quorlo_demo.retai…" is useless.
+    summary.add_column("Table", overflow="fold")
+    summary.add_column("Score", justify="right", no_wrap=True)
     for dim in dims:
-        summary.add_column(dim.value.title(), justify="right")
-    summary.add_column("Findings", justify="right")
+        summary.add_column(_HEADERS[dim], justify="right", no_wrap=True)
+    summary.add_column("Findings", justify="right", no_wrap=True)
 
     for t in sorted(report.tables, key=lambda t: (t.score is None, t.score or 0.0)):
+        name = Text(t.table.removeprefix(prefix))
+        if t.kind is not TableKind.TABLE:
+            name.append(f" ({t.kind.value.replace('_', ' ')})", style="dim")
         summary.add_row(
-            t.table,
-            t.kind.value,
+            name,
             _score_text(t.score),
             *(_score_text(t.dimensions.get(d)) for d in dims),
             str(len(t.findings)),
@@ -52,13 +79,12 @@ def render_report(report: ScanReport, console: Console, details: bool = False) -
 
     if details and report.findings:
         console.print()
-        findings = RichTable(title=f"Findings in {report.database}")
+        findings = RichTable(title=f"Findings in {scope}")
         # Fold rather than truncate: a target cut to "retail_…" is useless.
         findings.add_column("Target", overflow="fold")
         findings.add_column("Check", style="dim", overflow="fold")
         findings.add_column("Severity")
         findings.add_column("Problem")
-        prefix = f"{report.database}."
         for f in report.findings:
             target = f.target.removeprefix(prefix)
             findings.add_row(target, f.check_id, f.severity.value, f.message)

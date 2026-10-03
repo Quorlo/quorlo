@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import ClassVar, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
-from quorlo.models import Table
+from quorlo.models import Database, Table
 
 
 class Dimension(StrEnum):
@@ -66,13 +67,39 @@ class Finding(BaseModel):
         return f"{self.table}.{self.column}" if self.column else self.table
 
 
+@dataclass(frozen=True)
+class ScanContext:
+    """Everything that was scanned, for checks that compare a table with the others."""
+
+    tables: tuple[Table, ...]
+    _by_name: dict[str, Table] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "_by_name", {t.qualified_name: t for t in self.tables})
+
+    @classmethod
+    def of(cls, database: Database) -> ScanContext:
+        return cls(tuple(database.iter_tables()))
+
+    @classmethod
+    def of_tables(cls, tables: Sequence[Table]) -> ScanContext:
+        return cls(tuple(tables))
+
+    def table(self, qualified_name: str) -> Table | None:
+        return self._by_name.get(qualified_name)
+
+    def others(self, table: Table) -> Iterable[Table]:
+        return (t for t in self.tables if t.qualified_name != table.qualified_name)
+
+
 @runtime_checkable
 class Check(Protocol):
     """A readiness check.
 
     A check only reports what is wrong. It never computes a score: the engine derives
     how many units were evaluated from `scope` (one per table, or one per column) and
-    from `applies_to`.
+    from `applies_to`. `context` holds every scanned table, for checks that compare
+    tables; most checks ignore it.
     """
 
     id: ClassVar[str]
@@ -84,4 +111,4 @@ class Check(Protocol):
 
     def applies_to(self, table: Table) -> bool: ...
 
-    def run(self, table: Table) -> Iterable[Finding]: ...
+    def run(self, table: Table, context: ScanContext) -> Iterable[Finding]: ...

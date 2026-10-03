@@ -1,6 +1,6 @@
 """Readiness checks and scoring."""
 
-from quorlo.readiness.base import Check, Dimension, Finding, Scope, Severity
+from quorlo.readiness.base import Check, Dimension, Finding, ScanContext, Scope, Severity
 from quorlo.readiness.checks import DEFAULT_CHECKS
 from quorlo.readiness.engine import (
     CheckResult,
@@ -16,6 +16,7 @@ __all__ = [
     "CheckResult",
     "Dimension",
     "Finding",
+    "ScanContext",
     "ScanReport",
     "Scope",
     "Severity",

@@ -3,7 +3,7 @@
 **Make your data AI-ready.** Quorlo scans your data platforms, scores how ready each table is for AI agents, drafts the missing metadata, and writes what your data owners approve back to the catalogs you already use.
 
 !!! warning "Pre-alpha"
-    The first slice works: a read-only Postgres scan that scores the *What is it?* question. Enrichment, review and write-back are still being designed, and nothing is on PyPI yet. Feedback is welcome in [Discussions](https://github.com/Quorlo/quorlo/discussions).
+    The first slice works: a read-only Postgres scan that scores four of the five questions; lineage comes later. Enrichment, review and write-back are still being designed, and nothing is on PyPI yet. Feedback is welcome in [Discussions](https://github.com/Quorlo/quorlo/discussions).
 
 ## Why
 

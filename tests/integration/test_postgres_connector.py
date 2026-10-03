@@ -16,7 +16,7 @@ from pydantic import SecretStr
 from quorlo.connector import ConnectionConfig, ConnectorError
 from quorlo.connectors.postgres import PostgresConnector
 from quorlo.models import TableKind, TypeKind
-from quorlo.readiness import evaluate
+from quorlo.readiness import Dimension, evaluate
 
 DSN = os.environ.get("QUORLO_TEST_DSN")
 
@@ -77,6 +77,8 @@ def test_reads_comments(connector, demo):
 def test_reads_columns_and_types(demo):
     cust = demo["cust_mstr"]
     assert [c.name for c in cust.columns][:3] == ["cust_id", "nm", "eml"]
+    updated = demo["dim_product"].column("updated_at").data_type
+    assert (updated.raw, updated.kind) == ("timestamp with time zone", TypeKind.TIMESTAMP)
     nm = cust.column("nm")
     assert (nm.data_type.kind, nm.data_type.length, nm.nullable) == (TypeKind.STRING, 100, False)
     amt = demo["ord_hdr"].column("tot_amt").data_type
@@ -111,7 +113,27 @@ def test_connection_rejects_writes(connector):
 
 def test_demo_scores_show_a_range(connector):
     report = evaluate(connector.scan(["retail_raw"]))
-    scores = {t.table.rsplit(".", 1)[1]: t.score for t in report.tables}
-    assert scores["dim_product"] == 1.0
-    assert scores["stg_imp_01"] == 0.0
+    tables = {t.table.rsplit(".", 1)[1]: t for t in report.tables}
+    assert tables["dim_product"].score == 1.0
+    assert tables["stg_imp_01"].dimensions[Dimension.MEANING] == 0.0
     assert 0.0 < report.score < 1.0
+
+
+def test_demo_problems_land_in_the_right_dimension(connector):
+    report = evaluate(connector.scan(["retail_raw"]))
+    tables = {t.table.rsplit(".", 1)[1]: t for t in report.tables}
+
+    # Unmarked personal data in the customer master only.
+    pii = {
+        f.column for f in tables["cust_mstr"].findings if f.check_id == "column.pii.unclassified"
+    }
+    assert pii == {"nm", "eml", "phn", "addr1", "pc"}
+    assert [n for n, t in tables.items() if t.dimensions[Dimension.GOVERNANCE] < 1] == ["cust_mstr"]
+
+    # The two revenue tables are the only suspected duplicates.
+    duplicates = {n for n, t in tables.items() if t.dimensions[Dimension.CERTIFICATION] < 1}
+    assert duplicates == {"revenue_daily", "daily_revenue_v2"}
+
+    # Only dim_product says how fresh it is; the view isn't judged on freshness.
+    assert tables["dim_product"].dimensions[Dimension.TRUST] == 1.0
+    assert Dimension.TRUST not in tables["v_ord_summary"].dimensions
