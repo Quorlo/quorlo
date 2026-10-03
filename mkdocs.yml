@@ -1,0 +1,57 @@
+site_name: Quorlo
+site_description: Make your data AI-ready. Scan, score, enrich and write back metadata.
+site_url: https://quorlo.github.io/quorlo/
+repo_url: https://github.com/Quorlo/quorlo
+repo_name: Quorlo/quorlo
+edit_uri: edit/main/docs/
+copyright: Apache 2.0 licensed
+
+strict: true
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - content.action.edit
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Concepts:
+      - Readiness model: concepts/readiness.md
+      - Principles: concepts/principles.md
+  - Reference:
+      - CLI: reference/cli.md
+      - Checks: reference/checks.md
+  - Connectors:
+      - Postgres: connectors/postgres.md
+      - Writing a connector: connectors/writing-a-connector.md
+  - Contributing: contributing.md
