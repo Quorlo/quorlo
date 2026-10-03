@@ -6,9 +6,9 @@ import re
 from collections.abc import Iterable
 from typing import ClassVar
 
-from quorlo.models import Column, Table, TableKind
+from quorlo.models import Column, Table, TableKind, TypeKind
 from quorlo.readiness.base import Check, Dimension, Finding, ScanContext, Scope, Severity
-from quorlo.readiness.names import cryptic_reason, pii_category
+from quorlo.readiness.names import cryptic_reason, is_freshness_column_name, pii_category
 
 
 class _BaseCheck:
@@ -152,10 +152,38 @@ class PiiUnclassified(_BaseCheck):
                 )
 
 
+class FreshnessUntracked(_BaseCheck):
+    id = "table.freshness.untracked"
+    dimension = Dimension.TRUST
+    scope = Scope.TABLE
+    severity = Severity.MEDIUM
+    weight = 1.0
+    description = "The table has a column that tells an agent how fresh its data is."
+
+    def applies_to(self, table: Table) -> bool:
+        # A view is as fresh as the tables it reads; those are checked instead.
+        return table.kind in (TableKind.TABLE, TableKind.MATERIALIZED_VIEW, TableKind.OTHER)
+
+    def run(self, table: Table, context: ScanContext) -> Iterable[Finding]:
+        has_freshness_column = any(
+            col.data_type.kind in (TypeKind.TIMESTAMP, TypeKind.DATE)
+            and is_freshness_column_name(col.name)
+            for col in table.columns
+        )
+        if not has_freshness_column:
+            yield self._finding(
+                table,
+                "No column shows when rows were last loaded or updated.",
+                "Add a timestamp such as updated_at or loaded_at, maintained by the load "
+                "process, so agents can tell whether the data is current.",
+            )
+
+
 DEFAULT_CHECKS: tuple[Check, ...] = (
     TableDescriptionMissing(),
     ColumnDescriptionMissing(),
     PrimaryKeyMissing(),
     ColumnNameCryptic(),
     PiiUnclassified(),
+    FreshnessUntracked(),
 )

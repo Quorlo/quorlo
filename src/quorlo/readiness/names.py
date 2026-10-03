@@ -105,3 +105,18 @@ def pii_category(column: str, table: str, raw_type: str = "") -> str | None:
         if about_people and word in _PII_ABOUT_PEOPLE:
             return _PII_ABOUT_PEOPLE[word]
     return None
+
+
+# --- Freshness -----------------------------------------------------------------------
+# Words in a timestamp column's name that say when a row last changed or arrived.
+FRESHNESS_WORDS = frozenset(
+    {
+        "updated", "modified", "changed", "loaded", "load", "ingested", "ingestion",
+        "refreshed", "synced", "extracted", "etl",
+    }
+)  # fmt: skip
+
+
+def is_freshness_column_name(name: str) -> bool:
+    """True for names like updated_at, last_modified, _etl_loaded_at or ingestion_ts."""
+    return bool(FRESHNESS_WORDS & set(tokens(name)))
