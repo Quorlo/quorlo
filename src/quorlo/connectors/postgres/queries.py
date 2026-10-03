@@ -20,7 +20,7 @@ FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f')
   AND NOT c.relispartition
-  AND n.nspname = ANY(%(schemas)s::text[])
+  AND n.nspname = %(schema)s
 ORDER BY n.nspname, c.relname
 """
 
@@ -38,7 +38,7 @@ LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
 WHERE a.attnum > 0 AND NOT a.attisdropped
   AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
   AND NOT c.relispartition
-  AND n.nspname = ANY(%(schemas)s::text[])
+  AND n.nspname = %(schema)s
 ORDER BY n.nspname, c.relname, a.attnum
 """
 
@@ -57,6 +57,6 @@ JOIN pg_namespace n ON n.oid = c.relnamespace
 LEFT JOIN pg_class fc ON fc.oid = con.confrelid
 LEFT JOIN pg_namespace fn ON fn.oid = fc.relnamespace
 WHERE con.contype IN ('p', 'u', 'f')
-  AND n.nspname = ANY(%(schemas)s::text[])
+  AND n.nspname = %(schema)s
 ORDER BY n.nspname, c.relname, con.conname
 """

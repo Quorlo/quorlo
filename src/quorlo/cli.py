@@ -17,7 +17,7 @@ from rich.table import Table as RichTable
 
 import quorlo
 from quorlo import registry
-from quorlo.connector import ConnectionConfig, ConnectorError
+from quorlo.connector import ConnectionConfig, ConnectorError, read_database
 from quorlo.history import ScanRun, diff_runs
 from quorlo.readiness import evaluate
 from quorlo.render import (
@@ -137,7 +137,7 @@ def scan(
         try:
             connector_cls = registry.load_connector(connector)
             with connector_cls(ConnectionConfig(dsn=SecretStr(dsn))) as conn:
-                database = conn.scan(schema or None)
+                database = read_database(conn, schema or None)
         except ConnectorError as exc:
             _fail(str(exc))
 

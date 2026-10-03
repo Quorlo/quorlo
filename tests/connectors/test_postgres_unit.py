@@ -6,7 +6,7 @@ from pydantic import SecretStr
 from quorlo.connector import ConnectionConfig, Connector, ConnectorError
 from quorlo.connectors.postgres import (
     PostgresConnector,
-    build_database,
+    SchemaAssembler,
     parse_type,
     postgres_location,
 )
@@ -63,10 +63,9 @@ def _col(schema, table, ordinal, name, type_="integer", description=None, nullab
     }
 
 
-def test_build_database():
-    db = build_database(
-        "shop",
-        schemas=[{"name": "sales", "description": "Sales data."}, {"name": "empty", "description": None}],
+def test_schema_assembler_builds_one_schema():
+    schema = SchemaAssembler("shop").build(
+        {"name": "sales", "description": "Sales data."},
         tables=[
             {"schema": "sales", "name": "orders", "relkind": "r", "description": "Orders.", "reltuples": 120},
             {"schema": "sales", "name": "customers", "relkind": "p", "description": None, "reltuples": -1},
@@ -90,12 +89,8 @@ def test_build_database():
         ],
     )  # fmt: skip
 
-    assert db.name == "shop"
-    assert db.platform == "postgres"
-    assert [s.name for s in db.schemas] == ["sales", "empty"]
-    assert db.schemas[1].tables == ()
-
-    orders, customers, view = db.schemas[0].tables
+    assert (schema.name, schema.description) == ("sales", "Sales data.")
+    orders, customers, view = schema.tables
     assert orders.qualified_name == "shop.sales.orders"
     assert [c.name for c in orders.columns] == ["order_id", "customer_id"]
     assert orders.primary_key == ("order_id",)
@@ -147,6 +142,6 @@ def test_location_has_no_credentials():
     )
 
 
-def test_build_database_carries_location():
-    db = build_database("shop", [], [], [], [], location="postgres://h:5432/shop")
-    assert db.location == "postgres://h:5432/shop"
+def test_empty_schema():
+    schema = SchemaAssembler("shop").build({"name": "empty", "description": None}, [], [], [])
+    assert schema.tables == ()

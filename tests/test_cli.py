@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import ClassVar
 
 import pytest
@@ -10,7 +10,13 @@ from typer.testing import CliRunner
 from factories import make_column, make_table
 from quorlo import registry
 from quorlo.cli import app
-from quorlo.connector import ConnectionConfig, ConnectorCapabilities, ConnectorError
+from quorlo.connector import (
+    ConnectionConfig,
+    ConnectorCapabilities,
+    ConnectorError,
+    DatabaseInfo,
+    FetchStats,
+)
 from quorlo.models import Database, Schema
 from quorlo.readiness import evaluate
 from quorlo.registry import ConnectorInfo
@@ -36,7 +42,14 @@ class StubConnector:
     def list_schemas(self) -> list[str]:
         return ["public"]
 
-    def scan(self, schemas: Sequence[str] | None = None) -> Database:
+    def describe(self) -> DatabaseInfo:
+        return DatabaseInfo(name="db", platform="stub")
+
+    @property
+    def stats(self) -> FetchStats:
+        return FetchStats()
+
+    def iter_schemas(self, schemas: Sequence[str] | None = None) -> Iterator[Schema]:
         StubConnector.last_schemas = schemas
         good = make_table(
             "customers",
@@ -49,9 +62,7 @@ class StubConnector:
             description="Raw import." if StubConnector.staging_documented else None,
             columns=[make_column("c1"), make_column("f2")],
         )
-        return Database(
-            name="db", platform="stub", schemas=(Schema(name="public", tables=(good, bad)),)
-        )
+        yield Schema(name="public", tables=(good, bad))
 
     def close(self) -> None:
         pass
@@ -64,7 +75,7 @@ class StubConnector:
 
 
 class FailingConnector(StubConnector):
-    def scan(self, schemas: Sequence[str] | None = None) -> Database:
+    def iter_schemas(self, schemas: Sequence[str] | None = None) -> Iterator[Schema]:
         raise ConnectorError("could not connect to server")
 
 

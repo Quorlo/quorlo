@@ -8,14 +8,17 @@ READ ONLY), not just by the queries this module happens to run.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import Any, ClassVar, Self
+from collections.abc import Iterator, Sequence
+from typing import ClassVar, Self
 
-import psycopg
-from psycopg.rows import dict_row
-
-from quorlo.connector import ConnectionConfig, ConnectorCapabilities, ConnectorError
-from quorlo.connectors.postgres.catalog import PLATFORM, Row, build_database, postgres_location
+from quorlo.connector import (
+    ConnectionConfig,
+    ConnectorCapabilities,
+    ConnectorError,
+    DatabaseInfo,
+    FetchStats,
+)
+from quorlo.connectors.postgres.catalog import PLATFORM, Row, SchemaAssembler, postgres_location
 from quorlo.connectors.postgres.queries import (
     COLUMNS_SQL,
     CONSTRAINTS_SQL,
@@ -23,86 +26,72 @@ from quorlo.connectors.postgres.queries import (
     SYSTEM_SCHEMAS,
     TABLES_SQL,
 )
-from quorlo.models import Database
+from quorlo.connectors.postgres.runner import QueryRunner
+from quorlo.models import Schema
+
+# Queries per schema, whatever the number of tables in it. A test holds this constant.
+QUERIES_PER_SCHEMA = 3
 
 
 class PostgresConnector:
+    """Streams one schema at a time with QUERIES_PER_SCHEMA catalog queries each, plus
+    one query for the schema list, all inside a single read-only snapshot."""
+
     name: ClassVar[str] = PLATFORM
     capabilities: ClassVar[ConnectorCapabilities] = ConnectorCapabilities()
 
     def __init__(self, config: ConnectionConfig) -> None:
         if not config.read_only:
             raise ConnectorError("The postgres connector only supports read-only connections.")
-        self._config = config
-        self._conn: psycopg.Connection | None = None
+        self._runner = QueryRunner(config)
 
-    def _connection(self) -> psycopg.Connection:
-        if self._conn is None:
-            try:
-                conn = psycopg.connect(
-                    self._config.dsn.get_secret_value(),
-                    row_factory=dict_row,
-                    connect_timeout=self._config.options.get("connect_timeout", 10),
-                    application_name="quorlo",
-                )
-            except psycopg.Error as exc:
-                raise ConnectorError(f"Could not connect to Postgres: {exc}") from None
-            # Every transaction on this connection is READ ONLY; writes fail in the server.
-            conn.read_only = True
-            self._conn = conn
-        return self._conn
-
-    def _run(self, queries: Sequence[tuple[str, Mapping[str, Any] | None]]) -> list[list[Row]]:
-        """Run catalog queries in one read-only transaction, so they see one snapshot."""
-        conn = self._connection()
-        try:
-            with conn.cursor() as cur:
-                results = []
-                for sql, params in queries:
-                    cur.execute(sql, params)
-                    results.append(cur.fetchall())
-            return results
-        except psycopg.Error as exc:
-            raise ConnectorError(f"Postgres metadata query failed: {exc}") from None
-        finally:
-            conn.rollback()  # nothing to commit, and no transaction left open
+    @property
+    def stats(self) -> FetchStats:
+        return self._runner.stats
 
     def test_connection(self) -> None:
-        self._run([("SELECT 1 AS ok", None)])
+        with self._runner.snapshot():
+            self._runner.fetch("SELECT 1 AS ok")
+
+    def describe(self) -> DatabaseInfo:
+        """From the live connection, so no credential can end up in the location."""
+        info = self._runner.info
+        return DatabaseInfo(
+            name=info.dbname,
+            platform=PLATFORM,
+            location=postgres_location(info.host, info.port, info.dbname),
+        )
 
     def list_schemas(self) -> list[str]:
-        (rows,) = self._run([(SCHEMAS_SQL, {"system": list(SYSTEM_SCHEMAS)})])
-        return [r["name"] for r in rows]
+        with self._runner.snapshot():
+            return [row["name"] for row in self._schema_rows()]
 
-    def scan(self, schemas: Sequence[str] | None = None) -> Database:
-        wanted = list(schemas) if schemas else None
-        params = {"system": list(SYSTEM_SCHEMAS)}
-        (db_rows, schema_rows) = self._run(
-            [("SELECT current_database() AS name", None), (SCHEMAS_SQL, params)]
-        )
-        if wanted is not None:
-            unknown = set(wanted) - {r["name"] for r in schema_rows}
-            if unknown:
-                raise ConnectorError(f"Schemas not found: {', '.join(sorted(unknown))}.")
-            schema_rows = [r for r in schema_rows if r["name"] in wanted]
+    def iter_schemas(self, schemas: Sequence[str] | None = None) -> Iterator[Schema]:
+        assembler = SchemaAssembler(self._runner.info.dbname)
+        with self._runner.snapshot():
+            for row in self._selected(self._schema_rows(), schemas):
+                params = {"schema": row["name"]}
+                yield assembler.build(
+                    row,
+                    tables=self._runner.fetch(TABLES_SQL, params),
+                    columns=self._runner.fetch(COLUMNS_SQL, params),
+                    constraints=self._runner.fetch(CONSTRAINTS_SQL, params),
+                )
 
-        params = {"schemas": [r["name"] for r in schema_rows]}
-        tables, columns, constraints = self._run(
-            [(TABLES_SQL, params), (COLUMNS_SQL, params), (CONSTRAINTS_SQL, params)]
-        )
-        return build_database(
-            db_rows[0]["name"], schema_rows, tables, columns, constraints, self._location()
-        )
+    def _schema_rows(self) -> list[Row]:
+        return self._runner.fetch(SCHEMAS_SQL, {"system": list(SYSTEM_SCHEMAS)})
 
-    def _location(self) -> str:
-        """Server and database from the live connection, so no credential can end up in it."""
-        info = self._connection().info
-        return postgres_location(info.host, info.port, info.dbname)
+    @staticmethod
+    def _selected(rows: list[Row], wanted: Sequence[str] | None) -> list[Row]:
+        if not wanted:
+            return rows
+        unknown = set(wanted) - {r["name"] for r in rows}
+        if unknown:
+            raise ConnectorError(f"Schemas not found: {', '.join(sorted(unknown))}.")
+        return [r for r in rows if r["name"] in set(wanted)]
 
     def close(self) -> None:
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
+        self._runner.close()
 
     def __enter__(self) -> Self:
         return self
