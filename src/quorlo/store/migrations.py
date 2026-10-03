@@ -149,8 +149,12 @@ def _split_snapshots_and_track_status(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE runs DROP COLUMN snapshot")
 
 
+# v4: each run keeps its timing and size (ScanStats JSON); NULL for older runs.
+_RUN_STATS = "ALTER TABLE runs ADD COLUMN stats TEXT;"
+
 MIGRATIONS: list[Migration] = [
     SqlMigration(_SCHEMA_V1),
     PythonMigration(_complete_finding_rows),
     PythonMigration(_split_snapshots_and_track_status),
+    SqlMigration(_RUN_STATS),
 ]

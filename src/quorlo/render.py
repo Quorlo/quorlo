@@ -15,6 +15,7 @@ from rich.text import Text
 from quorlo.history import RunDiff, ScanRun, ScoreChange
 from quorlo.models import TableKind
 from quorlo.readiness import Dimension, Finding, ScanReport, TableReadiness
+from quorlo.stats import Phase, ScanStats
 from quorlo.store import RunSummary, SinceLastRun
 
 
@@ -120,7 +121,10 @@ class ReportView:
 
 
 def report_json(
-    report: ScanReport, findings: Iterable[Finding] = (), run_id: str | None = None
+    report: ScanReport,
+    findings: Iterable[Finding] = (),
+    run_id: str | None = None,
+    stats: ScanStats | None = None,
 ) -> str:
     data = report.model_dump(mode="json")
     data["findings_count"] = report.finding_count
@@ -129,7 +133,29 @@ def report_json(
     ]
     if run_id is not None:
         data["run_id"] = run_id
+    if stats is not None:
+        data["stats"] = stats.model_dump(mode="json")
     return json.dumps(data, indent=2)
+
+
+def _count(n: int, noun: str, plural: str | None = None) -> str:
+    return f"{n:,} {noun if n == 1 else plural or noun + 's'}"
+
+
+def stats_line(stats: ScanStats) -> Text:
+    """'Scanned 1 schema, 8 tables, 47 columns in 0.42s: fetch 0.12s (4 queries) · ...'"""
+    line = Text(
+        f"Scanned {_count(stats.schemas, 'schema')}, {_count(stats.tables, 'table')}, "
+        f"{_count(stats.columns, 'column')} in {stats.seconds:.2f}s: ",
+        style="dim",
+    )
+    parts = []
+    for phase in Phase:
+        part = f"{phase.value} {stats.phases.get(phase, 0.0):.2f}s"
+        if phase is Phase.FETCH:
+            part += f" ({_count(stats.queries, 'query', 'queries')})"
+        parts.append(part)
+    return line.append(" · ".join(parts), style="dim")
 
 
 # --- Run history ---------------------------------------------------------------------
@@ -226,30 +252,46 @@ def render_diff(diff: RunDiff, base: ScanRun, head: ScanRun, console: Console) -
                 console.print(line.append(f"({f.check_id})", style="dim"))
 
 
-def render_runs(runs: Sequence[RunSummary], console: Console, now: datetime) -> None:
-    if not runs:
-        console.print("No saved runs yet. Run [bold]quorlo scan[/bold] to save one.")
-        return
-    table = RichTable(box=box.SIMPLE_HEAD, pad_edge=False)
-    table.add_column("Run", no_wrap=True)
-    table.add_column("When", no_wrap=True)
-    table.add_column("Target", overflow="fold")
-    table.add_column("Score", justify="right")
-    table.add_column("Tables", justify="right")
-    table.add_column("Findings", justify="right")
-    for r in runs:
-        target = r.target.label
-        if r.schemas:
-            target += f" [{', '.join(r.schemas)}]"
-        table.add_row(
-            r.id,
-            _ago(r.started_at, now),
-            target,
-            _score_text(r.score),
-            str(r.tables),
-            str(r.findings),
-        )
-    console.print(table)
+class RunsView:
+    """Saved runs as a table. When they all share one target, it moves to the title."""
+
+    def __init__(self, runs: Sequence[RunSummary], now: datetime) -> None:
+        self._runs = runs
+        self._now = now
+        self._one_target = len({r.target for r in runs}) == 1
+
+    def render(self, console: Console) -> None:
+        if not self._runs:
+            console.print("No saved runs yet. Run [bold]quorlo scan[/bold] to save one.")
+            return
+        console.print(self._table())
+
+    def _table(self) -> RichTable:
+        title = f"Runs of {self._runs[0].target.label}" if self._one_target else None
+        table = RichTable(title=title, box=box.SIMPLE_HEAD, pad_edge=False)
+        table.add_column("Run", no_wrap=True)
+        table.add_column("When", no_wrap=True)
+        if not self._one_target:
+            table.add_column("Target", overflow="fold")
+        table.add_column("Schemas", overflow="fold")
+        table.add_column("Score", justify="right")
+        table.add_column("Tables", justify="right")
+        table.add_column("Findings", justify="right")
+        for r in self._runs:
+            table.add_row(*self._cells(r))
+        return table
+
+    def _cells(self, run: RunSummary) -> list[str | Text]:
+        target = [] if self._one_target else [run.target.label]
+        return [
+            run.id,
+            _ago(run.started_at, self._now),
+            *target,
+            ", ".join(run.schemas) if run.schemas else "all",
+            _score_text(run.score),
+            str(run.tables),
+            str(run.findings),
+        ]
 
 
 def diff_json(diff: RunDiff) -> str:

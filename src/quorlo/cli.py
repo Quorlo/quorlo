@@ -17,20 +17,21 @@ from rich.table import Table as RichTable
 
 import quorlo
 from quorlo import registry
-from quorlo.connector import ConnectionConfig, ConnectorError, read_database
+from quorlo.connector import ConnectionConfig, ConnectorError
 from quorlo.history import ScanRun, diff_runs
-from quorlo.readiness import evaluate
+from quorlo.readiness import ReadinessEngine
 from quorlo.render import (
     ReportView,
+    RunsView,
     change_line,
     diff_json,
     render_diff,
-    render_runs,
     report_json,
+    stats_line,
 )
+from quorlo.scanner import Scanner, ScanOutcome
 from quorlo.store import (
     RunNotFoundError,
-    SinceLastRun,
     SqliteRunStore,
     StoreError,
     default_store_path,
@@ -139,33 +140,29 @@ def scan(
     """Scan a platform read-only and score how AI-ready each table is."""
     # Open the run history first, so a bad --store fails before a long scan, not after.
     with _open_store(store_path) if save else nullcontext() as store:
-        started_at = datetime.now(UTC)
+        scanner = Scanner(ReadinessEngine(), store)
         try:
             connector_cls = registry.load_connector(connector)
             with connector_cls(ConnectionConfig(dsn=SecretStr(dsn))) as conn:
-                database = read_database(conn, schema or None)
+                outcome = scanner.scan(conn, schema or None)
         except ConnectorError as exc:
             _fail(str(exc))
+        _show_scan(outcome, scanner, output, details)
 
-        evaluation = evaluate(database)
-        report = evaluation.report
-        run = ScanRun.record(
-            database, report, evaluation.findings, started_at=started_at, schemas=schema
-        )
-        since = None
-        if store is not None:
-            store.save(run, database.schemas)
-            if previous := store.previous(run):
-                since = SinceLastRun.between(store, previous, run.id, report)
 
+def _show_scan(outcome: ScanOutcome, scanner: Scanner, output: OutputFormat, details: bool) -> None:
+    run_id = outcome.header.id if outcome.saved else None
     if output is OutputFormat.JSON:
-        typer.echo(report_json(report, run.findings, run_id=run.id if save else None))
+        findings = scanner.findings(outcome)
+        typer.echo(report_json(outcome.report, findings, run_id=run_id, stats=outcome.stats))
         return
-    ReportView(report, run.findings).render(console, details=details)
-    if since is not None:
-        console.print(change_line(since, datetime.now(UTC)))
-    if save:
-        console.print(f"[dim]Saved as run {run.id}.[/dim]")
+    findings = scanner.findings(outcome) if details else ()
+    ReportView(outcome.report, findings).render(console, details=details)
+    if outcome.since_last_run is not None:
+        console.print(change_line(outcome.since_last_run, datetime.now(UTC)))
+    console.print(stats_line(outcome.stats))
+    if run_id:
+        console.print(f"[dim]Saved as run {run_id}.[/dim]")
 
 
 runs_app = typer.Typer(
@@ -185,7 +182,7 @@ def runs(
     if ctx.invoked_subcommand is not None:
         return
     with _open_store(store_path) as store:
-        render_runs(store.list(limit=limit), console, datetime.now(UTC))
+        RunsView(store.list(limit=limit), datetime.now(UTC)).render(console)
 
 
 @runs_app.command("show")

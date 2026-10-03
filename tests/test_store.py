@@ -61,7 +61,7 @@ def test_satisfies_protocol(store):
 
 def test_creates_parent_directory_and_schema(tmp_path, store):
     assert (tmp_path / "nested" / "quorlo.db").exists()
-    assert store.schema_version == 3
+    assert store.schema_version == 4
 
 
 def test_save_and_get_round_trip(store):
@@ -173,7 +173,7 @@ def test_reopening_does_not_rerun_migrations(tmp_path):
     with SqliteRunStore(path) as s:
         s.save(r)
     with SqliteRunStore(path) as s:
-        assert s.schema_version == 3
+        assert s.schema_version == 4
         assert s.get(r.id) == r
 
 
@@ -221,7 +221,7 @@ def test_upgrades_a_version_1_store_without_losing_findings(tmp_path):
     conn.close()
 
     with SqliteRunStore(path) as store:
-        assert store.schema_version == 3
+        assert store.schema_version == 4
         upgraded = store.get(r.id)
         snapshot = list(store.snapshot(r.id))
     assert upgraded.findings == r.findings  # remedy, scope and key recovered from the blob

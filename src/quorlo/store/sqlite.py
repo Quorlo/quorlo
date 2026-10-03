@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from quorlo.history import RunHeader, RunTarget, ScanRun
 from quorlo.models import Schema
 from quorlo.readiness import Finding, ScanReport
+from quorlo.stats import ScanStats
 from quorlo.store.base import (
     FindingChanges,
     RunNotFoundError,
@@ -87,7 +88,7 @@ class _FindingRows:
 class SqliteRunWriter:
     """Writes one run as its scan streams. Each batch is its own transaction."""
 
-    batch_size: ClassVar[int] = 1000
+    batch_size: ClassVar[int] = 5000
 
     def __init__(self, store: SqliteRunStore, header: RunHeader) -> None:
         self._store = store
@@ -108,7 +109,9 @@ class SqliteRunWriter:
             )
         self._schemas += 1
 
-    def finish(self, report: ScanReport, finished_at: datetime) -> None:
+    def finish(
+        self, report: ScanReport, finished_at: datetime, stats: ScanStats | None = None
+    ) -> None:
         self._flush()
         with self._store.transaction() as conn:
             conn.executemany(
@@ -124,13 +127,14 @@ class SqliteRunWriter:
             )
             conn.execute(
                 "UPDATE runs SET finished_at = ?, score = ?, table_count = ?, "
-                "finding_count = ?, report = ?, status = ? WHERE id = ?",
+                "finding_count = ?, report = ?, stats = ?, status = ? WHERE id = ?",
                 (
                     _utc(finished_at),
                     report.score,
                     len(report.tables),
                     report.finding_count,
                     _pack(report),
+                    stats.model_dump_json() if stats else None,
                     _COMPLETE,
                     self._run_id,
                 ),
@@ -158,6 +162,12 @@ class SqliteRunStore:
         self._conn.row_factory = sqlite3.Row
         self._conn.isolation_level = None  # transactions are begun explicitly, never implied
         self._conn.execute("PRAGMA foreign_keys = ON")
+        # WAL with NORMAL sync: a commit no longer waits for the disk, so writing a large
+        # scan in batches is fast. Still crash-safe; only a power cut can lose the last
+        # commit, and an unfinished run is never shown as complete anyway.
+        if str(path) != ":memory:":
+            self._conn.execute("PRAGMA journal_mode = WAL")
+        self._conn.execute("PRAGMA synchronous = NORMAL")
         self._migrate()
 
     # --- lifecycle -----------------------------------------------------------------------
@@ -231,7 +241,7 @@ class SqliteRunStore:
         for schema in schemas:
             writer.add_schema(schema)
         writer.add(run.findings)
-        writer.finish(run.report, run.finished_at)
+        writer.finish(run.report, run.finished_at, run.stats)
 
     # --- reading -------------------------------------------------------------------------
 
@@ -249,6 +259,11 @@ class SqliteRunStore:
         )
         for row in rows:
             yield Schema.model_validate_json(zlib.decompress(row["snapshot"]))
+
+    def findings(self, run_id: str) -> Iterator[Finding]:
+        rows = self._conn.execute(_FindingRows.SELECT, (self._resolve(run_id)["id"],))
+        for row in rows:
+            yield _FindingRows.finding(row)
 
     def list(self, target: RunTarget | None = None, limit: int = 20) -> list[RunSummary]:
         sql = f"SELECT * FROM runs WHERE status = '{_COMPLETE}'"
@@ -324,6 +339,7 @@ class SqliteRunStore:
             schemas=_schemas_tuple(row["schemas"]),
             report=ScanReport.model_validate_json(zlib.decompress(row["report"])),
             findings=tuple(_FindingRows.finding(f) for f in findings),
+            stats=ScanStats.model_validate_json(row["stats"]) if row["stats"] else None,
         )
 
     @staticmethod

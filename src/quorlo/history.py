@@ -15,6 +15,7 @@ import quorlo
 from quorlo.connector import DatabaseInfo
 from quorlo.models import Database
 from quorlo.readiness import Dimension, Finding, ScanReport
+from quorlo.stats import ScanStats
 
 
 class _Frozen(BaseModel):
@@ -85,6 +86,7 @@ class ScanRun(RunHeader):
     finished_at: datetime
     report: ScanReport
     findings: tuple[Finding, ...] = ()
+    stats: ScanStats | None = Field(default=None, description="None for runs saved before v4.")
 
     @field_validator("finished_at")
     @classmethod

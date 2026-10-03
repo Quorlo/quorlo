@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 from quorlo.history import RunHeader, RunTarget, ScanRun
 from quorlo.models import Schema
 from quorlo.readiness import Finding, ScanReport
+from quorlo.stats import ScanStats
 
 
 class StoreError(Exception):
@@ -79,7 +80,9 @@ class RunWriter(Protocol):
         """Keep the scanned metadata of one schema."""
         ...
 
-    def finish(self, report: ScanReport, finished_at: datetime) -> None:
+    def finish(
+        self, report: ScanReport, finished_at: datetime, stats: ScanStats | None = None
+    ) -> None:
         """Mark the run complete. A run that never finishes is never listed or compared."""
         ...
 
@@ -101,6 +104,10 @@ class RunStore(Protocol):
 
     def snapshot(self, run_id: str) -> Iterator[Schema]:
         """The metadata a run scanned, one schema at a time."""
+        ...
+
+    def findings(self, run_id: str) -> Iterator[Finding]:
+        """A run's findings, streamed rather than loaded all at once."""
         ...
 
     def list(self, target: RunTarget | None = None, limit: int = 20) -> list[RunSummary]:
