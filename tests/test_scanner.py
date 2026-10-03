@@ -14,11 +14,11 @@ from quorlo.connectors import (
     DatabaseInfo,
     FetchStats,
 )
+from quorlo.history import SqliteRunStore
 from quorlo.models import Schema
 from quorlo.readiness import ReadinessEngine
 from quorlo.scanner import Scanner
 from quorlo.stats import Phase
-from quorlo.store import SqliteRunStore
 
 
 class StreamingConnector:

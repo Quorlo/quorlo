@@ -12,11 +12,10 @@ from rich.markup import escape
 from rich.table import Table as RichTable
 from rich.text import Text
 
-from quorlo.history import RunDiff, ScanRun, ScoreChange
+from quorlo.history import RunDiff, RunSummary, ScanRun, ScoreChange, SinceLastRun
 from quorlo.models import TableKind
 from quorlo.readiness import Dimension, Finding, ScanReport, TableReadiness
 from quorlo.stats import Phase, ScanStats
-from quorlo.store import RunSummary, SinceLastRun
 
 
 def _score_text(score: float | None) -> Text:

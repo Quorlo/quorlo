@@ -14,11 +14,10 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, ConfigDict
 
 from quorlo.connectors import Connector
-from quorlo.history import RunHeader, RunTarget
+from quorlo.history import RunHeader, RunStore, RunTarget, SinceLastRun
 from quorlo.models import Schema
 from quorlo.readiness import Finding, FindingList, FindingSink, ReadinessEngine, ScanReport
 from quorlo.stats import Phase, PhaseClock, ScanStats
-from quorlo.store import RunStore, SinceLastRun
 
 
 class ScanOutcome(BaseModel):

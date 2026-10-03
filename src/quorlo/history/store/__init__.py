@@ -3,7 +3,7 @@
 Nothing here ever holds data from a scanned table: runs carry metadata and findings only.
 """
 
-from quorlo.store.base import (
+from quorlo.history.store.base import (
     FindingChanges,
     RunNotFoundError,
     RunStore,
@@ -13,7 +13,7 @@ from quorlo.store.base import (
     StoreError,
     default_store_path,
 )
-from quorlo.store.sqlite import SqliteRunStore, SqliteRunWriter
+from quorlo.history.store.sqlite import SqliteRunStore, SqliteRunWriter
 
 __all__ = [
     "FindingChanges",
