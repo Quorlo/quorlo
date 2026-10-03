@@ -10,11 +10,17 @@ A connector reads metadata from one platform and translates it into Quorlo's pla
 A connector is a class with the shape of the `quorlo.connector.Connector` protocol. It does **not** need to inherit from anything in Quorlo.
 
 ```python
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import ClassVar, Self
 
-from quorlo.connector import ConnectionConfig, ConnectorCapabilities, ConnectorError
-from quorlo.models import Database
+from quorlo.connector import (
+    ConnectionConfig,
+    ConnectorCapabilities,
+    ConnectorError,
+    DatabaseInfo,
+    FetchStats,
+)
+from quorlo.models import Schema
 
 
 class MySQLConnector:
@@ -27,11 +33,18 @@ class MySQLConnector:
     def test_connection(self) -> None:
         """Raise ConnectorError if the platform can't be reached."""
 
+    def describe(self) -> DatabaseInfo:
+        """Name, platform and credential-free location. Must not fetch any tables."""
+
     def list_schemas(self) -> list[str]:
         """Names of all non-system schemas."""
 
-    def scan(self, schemas: Sequence[str] | None = None) -> Database:
-        """Read metadata for these schemas, or all non-system schemas when None."""
+    def iter_schemas(self, schemas: Sequence[str] | None = None) -> Iterator[Schema]:
+        """Yield each schema, complete with its tables, one at a time."""
+
+    @property
+    def stats(self) -> FetchStats:
+        """Queries issued, rows read and time spent fetching so far."""
 
     def close(self) -> None: ...
 
@@ -41,6 +54,19 @@ class MySQLConnector:
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 ```
+
+## Fetch in batches, stream by schema
+
+Scans have to work on estates with tens of thousands of tables, so the contract has two rules:
+
+1. **Batch-first.** Fetch each schema with a **fixed number of queries**, however many tables it has: one query for all its tables, one for all their columns, one for all their constraints. Never run a query per table. The Postgres connector uses exactly three per schema, plus one for the schema list.
+2. **Stream.** `iter_schemas` is a generator that yields one complete `Schema` at a time. Quorlo checks it, saves it and drops it before asking for the next one, so memory stays bounded by your largest schema rather than the whole estate.
+
+And one more, for correctness: read **one consistent snapshot**. All of a scan's queries should see the platform at the same moment, so a schema change during the scan can't show up half-applied. In Postgres that's one `REPEATABLE READ`, read-only transaction around the whole stream. Close it in a `finally` block: a scan can stop part-way.
+
+Count every query in `stats`. Quorlo prints the count after each scan, and your tests should hold it constant. The Postgres connector has an integration test that scans a schema with 1 table and one with 60, and asserts both cost the same number of queries.
+
+To collect everything at once, for example in a test, use `quorlo.connector.read_database(connector)`.
 
 ### `ConnectionConfig`
 
@@ -65,42 +91,38 @@ ConnectorCapabilities(reads_data=False, metadata_write_back=False, sample_values
 
 ### Errors
 
-Raise `quorlo.connector.ConnectorError` for failures the user can act on: can't connect, permission denied, unknown schema. The CLI prints the message and exits with code 2. Re-raise driver errors as `ConnectorError` with `from None`, so the traceback can't leak a DSN.
+Raise `quorlo.connector.ConnectorError` for failures the user can act on: can't connect, permission denied, unknown schema. Raise an unknown schema from `iter_schemas`, before yielding anything. The CLI prints the message and exits with code 2. Re-raise driver errors as `ConnectorError` with `from None`, so the traceback can't leak a DSN.
 
 ## Building the models
 
-`scan()` returns a `quorlo.models.Database`. The models are frozen and reject unknown fields.
+`iter_schemas()` yields `quorlo.models.Schema` objects. The models are frozen and reject unknown fields.
 
 ```python
-from quorlo.models import Column, Database, DataType, Schema, Table, TableKind, TableRef, TypeKind
+from quorlo.models import Column, DataType, Schema, Table, TableKind, TableRef, TypeKind
 
-Database(
-    name="shop",
-    platform="mysql",
-    schemas=(
-        Schema(
-            name="sales",
-            tables=(
-                Table(
-                    name="orders",
-                    kind=TableKind.TABLE,
-                    description="One row per order.",
-                    columns=(
-                        Column(
-                            name="order_id",
-                            data_type=DataType(raw="int", kind=TypeKind.INTEGER),
-                            ordinal=1,
-                            nullable=False,
-                        ),
-                    ),
-                    primary_key=("order_id",),
-                    ref=TableRef(database="shop", schema="sales", table="orders"),
+Schema(
+    name="sales",
+    tables=(
+        Table(
+            name="orders",
+            kind=TableKind.TABLE,
+            description="One row per order.",
+            columns=(
+                Column(
+                    name="order_id",
+                    data_type=DataType(raw="int", kind=TypeKind.INTEGER),
+                    ordinal=1,
+                    nullable=False,
                 ),
             ),
+            primary_key=("order_id",),
+            ref=TableRef(database="shop", schema="sales", table="orders"),
         ),
     ),
 )
 ```
+
+Keep turning rows into models separate from fetching them, in a class you can unit-test with plain dicts. The Postgres connector's `SchemaAssembler` is an example.
 
 - Keep the platform's own type spelling in `DataType.raw`, and map it to the closest neutral `TypeKind`. Use `TypeKind.OTHER` when nothing fits.
 - `row_count_estimate` must come from catalog statistics. Never count rows.
@@ -124,4 +146,9 @@ Once installed in the same environment, it shows up in `quorlo connectors` and w
 - Write back only metadata (comments, tags, descriptions), never data.
 - Ship unit tests that run without the platform, and integration tests marked `@pytest.mark.integration` against a local or containerized instance.
 
-The [Postgres connector](https://github.com/Quorlo/quorlo/blob/main/src/quorlo/connectors/postgres.py) is a complete example: catalog queries, a pure function that turns query rows into models, and a driver-enforced read-only connection.
+The [Postgres connector](https://github.com/Quorlo/quorlo/tree/main/src/quorlo/connectors/postgres) is a complete example, one module per job:
+- `queries`: the catalog SQL;
+- `runner`: one read-only snapshot transaction, with every query counted;
+- `catalog`: turns rows into models;
+- `types`: maps platform types to neutral ones;
+- `connector`: puts the pieces together.

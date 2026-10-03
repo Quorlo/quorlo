@@ -11,6 +11,9 @@ quorlo scan
 ```
 ...
 Overall: 44% across 8 tables, 77 findings
+...
+Scanned 2 schemas, 8 tables, 39 columns in 0.03s
+  fetch 0.02s (7 queries) · checks 0.00s · scoring 0.00s · persistence 0.00s
 Saved as run 20261003T174608Z-b2a84e.
 ```
 
@@ -71,7 +74,9 @@ Use another file with `--store PATH` or the `QUORLO_STORE` environment variable,
 
 ### What's in it
 
-For each run: when it ran, the Quorlo version, the target, the scores, every finding, and a snapshot of the scanned metadata (table and column names, types, comments, keys). This is what makes future features like schema drift detection possible.
+For each run: when it ran, the Quorlo version, the target, the scores, every finding, how long each phase took, and a snapshot of the scanned metadata (table and column names, types, comments, keys), one row per schema. The snapshot is what makes future features like schema drift detection possible.
+
+A run is written while its scan streams: each schema's snapshot as soon as it has been checked, findings in batches. A scan that stops part-way, for example because the connection dropped, leaves a run marked unfinished. It never appears in `quorlo runs` and is never compared against.
 
 The store never holds data from your tables, and the target is recorded as `postgres://host:port/database`, built from the live connection, so it never contains a user name or password. It does hold your schema and its comments, so treat the file like any other copy of your schema documentation.
 
@@ -89,8 +94,9 @@ sqlite3 ~/.local/share/quorlo/quorlo.db "
 
 | Table | One row per |
 | --- | --- |
-| `runs` | run: id, timestamps, target, schemas, overall score, counts |
+| `runs` | run: id, timestamps, target, schemas, overall score, counts, status, timing (`stats` JSON) |
 | `table_scores` | run, table and dimension (`overall`, `meaning`, `trust`, ...) |
-| `findings` | finding in a run, with its fingerprint, check, severity, table and column |
+| `findings` | finding in a run, with its fingerprint, check, severity, table, column, message and remedy |
+| `schema_snapshots` | scanned schema in a run, as compressed JSON |
 
 The layout is versioned and upgraded automatically. A Quorlo that finds a store written by a newer version refuses to touch it rather than risk damaging it.

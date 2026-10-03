@@ -23,18 +23,22 @@ quorlo scan [--dsn DSN] [--connector NAME] [--schema NAME]... [--details] [--for
 | `--save` / `--no-save` | save | Save the run to the [run history](../guides/run-history.md). |
 | `--store` | `$QUORLO_STORE`, else the user data directory | The run history file. |
 
-When the run is saved, the summary ends with how it compares with the previous run of the same database and schemas:
+After the summary come how the run compares with the previous run of the same database and schemas (when there is one), where the time went, and the run id:
 
 ```
 Since last run (2 days ago): 44% → 48% (+4 pts), 3 resolved, 1 new
+Scanned 2 schemas, 8 tables, 39 columns in 0.42s
+  fetch 0.12s (7 queries) · checks 0.20s · scoring 0.01s · persistence 0.09s
 Saved as run 20261003T174608Z-baf7f9.
 ```
+
+The timing line splits the scan into phases. *fetch* is reading metadata from the platform, with the number of queries it took. *checks* is running the checks. *scoring* is turning results into scores. *persistence* is writing the run history. Schemas stream through these phases one at a time, so the times are totals across all schemas.
 
 **Exit codes:** `0` when the scan completed, `2` when it couldn't, for example an unknown connector, a connection failure, an unknown schema or an unusable `--store`. The error is printed to stderr. Today a low score does not change the exit code.
 
 ### JSON output
 
-`--format json` prints the full report: overall and per-dimension scores, and for every table its scores, the result of each check and every finding.
+`--format json` prints the full report: overall and per-dimension scores, for every table its scores and the result of each check, every finding, and the scan's timing.
 
 ```bash
 quorlo scan --format json | jq '.tables[] | {table, score}'
@@ -47,11 +51,11 @@ quorlo scan --format json | jq '.tables[] | {table, score}'
 }
 ```
 
-The top level has `database`, `platform`, `checks` (each check that ran, with its version), `score`, `dimensions`, `tables`, `findings_count` and, when the run was saved, `run_id`. Scores are fractions between 0 and 1, or `null` when nothing was evaluated.
+The top level has `database`, `platform`, `checks` (each check that ran, with its version), `score`, `dimensions`, `tables`, `findings` (each with its `fingerprint`), `findings_count`, `stats` (seconds per phase, queries, rows, schemas, tables, columns) and, when the run was saved, `run_id`. Scores are fractions between 0 and 1, or `null` when nothing was evaluated.
 
 ## `quorlo runs`
 
-List saved runs, newest first: id, when, target, score, table and finding counts.
+List saved runs, newest first: id, when, which schemas, score, table and finding counts. When all listed runs share one target, it's shown in the title; otherwise each row names its target.
 
 | Option | Default | Description |
 | --- | --- | --- |
