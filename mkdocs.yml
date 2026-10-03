@@ -45,6 +45,8 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting started: getting-started.md
+  - Guides:
+      - Run history: guides/run-history.md
   - Concepts:
       - Readiness model: concepts/readiness.md
       - Principles: concepts/principles.md

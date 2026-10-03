@@ -70,6 +70,8 @@ src/quorlo/
   registry.py        connector discovery via the `quorlo.connectors` entry-point group
   readiness/         Check protocol, Dimension, Finding, scoring engine, built-in checks
   connectors/        built-in connectors (postgres)
+  history.py         ScanRun (a saved scan) and diff_runs (what changed between two runs)
+  store.py           RunStore protocol and the SQLite run history
   cli.py, render.py  Typer CLI and output rendering
 demo/                messy demo schema for the docker-compose Postgres
 tests/               unit tests; tests/integration/ needs a running database
@@ -81,6 +83,10 @@ tests/               unit tests; tests/integration/ needs a running database
   not a base class, so third-party packages don't depend on core's class hierarchy.
   They register in the `quorlo.connectors` entry-point group. The built-in Postgres
   connector registers the same way, so core always exercises the plugin path.
+- **Runs are compared by finding fingerprint** (check, table, column, key), never by
+  message text. Bump a check's `version` whenever a rule change can change its findings.
+- **Tests never touch the real run history**: `tests/conftest.py` points `QUORLO_STORE`
+  at a temp file for every test.
 - **Checks only report what is wrong.** `Check.run(table)` yields `Finding`s. The
   engine derives the denominator from the check's `Scope` (1 unit per table for
   TABLE checks, 1 per column for COLUMN checks):
