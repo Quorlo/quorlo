@@ -30,6 +30,9 @@ Issues = "https://github.com/Quorlo/quorlo/issues"
 [project.scripts]
 quorlo = "quorlo.cli:app"
 
+[project.entry-points."quorlo.connectors"]
+postgres = "quorlo.connectors.postgres:PostgresConnector"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
@@ -60,9 +63,14 @@ select = [
     "RUF", # ruff-specific
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# Table-shaped fixture data reads better unwrapped.
+"tests/**" = ["E501"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-m", "not integration", "--strict-markers"]
 markers = [
     "integration: needs a running database; set QUORLO_TEST_DSN and run with -m integration",
 ]
+
