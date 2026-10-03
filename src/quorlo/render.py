@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 
 from rich import box
@@ -14,7 +14,7 @@ from rich.text import Text
 
 from quorlo.history import RunDiff, ScanRun, ScoreChange
 from quorlo.models import TableKind
-from quorlo.readiness import Dimension, ScanReport
+from quorlo.readiness import Dimension, Finding, ScanReport, TableReadiness
 from quorlo.store import RunSummary
 
 
@@ -44,61 +44,89 @@ def _name_prefix(report: ScanReport) -> str:
     return f"{report.database}."
 
 
-def render_report(report: ScanReport, console: Console, details: bool = False) -> None:
-    dims = [d for d in Dimension if d in report.dimensions]
-    prefix = _name_prefix(report)
-    scope = prefix.rstrip(".")
+class ReportView:
+    """A scan report in the terminal: per-table summary, overall scores, optional findings."""
 
-    summary = RichTable(
-        title=f"AI readiness: {scope} ({report.platform})", box=box.SIMPLE_HEAD, pad_edge=False
-    )
-    # Fold rather than truncate: a name cut to "quorlo_demo.retai…" is useless.
-    summary.add_column("Table", overflow="fold")
-    summary.add_column("Score", justify="right", no_wrap=True)
-    for dim in dims:
-        summary.add_column(_HEADERS[dim], justify="right", no_wrap=True)
-    summary.add_column("Findings", justify="right", no_wrap=True)
+    def __init__(self, report: ScanReport, findings: Iterable[Finding] = ()) -> None:
+        self._report = report
+        self._findings = findings
+        self._prefix = _name_prefix(report)
+        self._dimensions = [d for d in Dimension if d in report.dimensions]
 
-    for t in sorted(report.tables, key=lambda t: (t.score is None, t.score or 0.0)):
-        name = Text(t.table.removeprefix(prefix))
-        if t.kind is not TableKind.TABLE:
-            name.append(f" ({t.kind.value.replace('_', ' ')})", style="dim")
-        summary.add_row(
-            name,
-            _score_text(t.score),
-            *(_score_text(t.dimensions.get(d)) for d in dims),
-            str(len(t.findings)),
+    def render(self, console: Console, details: bool = False) -> None:
+        console.print(self._summary())
+        for line in self._overall():
+            console.print(line)
+        if details:
+            findings = self._findings_table()
+            if findings.row_count:
+                console.print()
+                console.print(findings)
+
+    @property
+    def _scope(self) -> str:
+        return self._prefix.rstrip(".")
+
+    def _summary(self) -> RichTable:
+        table = RichTable(
+            title=f"AI readiness: {self._scope} ({self._report.platform})",
+            box=box.SIMPLE_HEAD,
+            pad_edge=False,
         )
-    console.print(summary)
+        # Fold rather than truncate: a name cut to "quorlo_demo.retai…" is useless.
+        table.add_column("Table", overflow="fold")
+        table.add_column("Score", justify="right", no_wrap=True)
+        for dim in self._dimensions:
+            table.add_column(_HEADERS[dim], justify="right", no_wrap=True)
+        table.add_column("Findings", justify="right", no_wrap=True)
+        for t in sorted(self._report.tables, key=lambda t: (t.score is None, t.score or 0.0)):
+            table.add_row(
+                self._table_name(t),
+                _score_text(t.score),
+                *(_score_text(t.dimensions.get(d)) for d in self._dimensions),
+                str(t.finding_count),
+            )
+        return table
 
-    overall = Text("Overall: ").append_text(_score_text(report.score))
-    overall.append(f" across {len(report.tables)} tables, {len(report.findings)} findings")
-    console.print(overall)
-    for dim in dims:
-        line = Text(f"  {dim.question:<26}").append_text(_score_text(report.dimensions[dim]))
-        console.print(line)
-    unscored = [d for d in Dimension if d not in report.dimensions]
-    if unscored:
-        names = ", ".join(d.value for d in unscored)
-        console.print(f"  [dim]Not scored yet (no checks): {names}[/dim]")
+    def _table_name(self, table: TableReadiness) -> Text:
+        name = Text(table.table.removeprefix(self._prefix))
+        if table.kind is not TableKind.TABLE:
+            name.append(f" ({table.kind.value.replace('_', ' ')})", style="dim")
+        return name
 
-    if details and report.findings:
-        console.print()
-        findings = RichTable(title=f"Findings in {scope}")
+    def _overall(self) -> Iterable[Text | str]:
+        report = self._report
+        overall = Text("Overall: ").append_text(_score_text(report.score))
+        overall.append(f" across {len(report.tables)} tables, {report.finding_count} findings")
+        yield overall
+        for dim in self._dimensions:
+            yield Text(f"  {dim.question:<26}").append_text(_score_text(report.dimensions[dim]))
+        unscored = [d.value for d in Dimension if d not in report.dimensions]
+        if unscored:
+            yield f"  [dim]Not scored yet (no checks): {', '.join(unscored)}[/dim]"
+
+    def _findings_table(self) -> RichTable:
+        table = RichTable(title=f"Findings in {self._scope}")
         # Fold rather than truncate: a target cut to "retail_…" is useless.
-        findings.add_column("Target", overflow="fold")
-        findings.add_column("Check", style="dim", overflow="fold")
-        findings.add_column("Severity")
-        findings.add_column("Problem")
-        for f in report.findings:
-            target = f.target.removeprefix(prefix)
-            findings.add_row(target, f.check_id, f.severity.value, f.message)
-        console.print(findings)
+        table.add_column("Target", overflow="fold")
+        table.add_column("Check", style="dim", overflow="fold")
+        table.add_column("Severity")
+        table.add_column("Problem")
+        for f in self._findings:
+            table.add_row(
+                f.target.removeprefix(self._prefix), f.check_id, f.severity.value, f.message
+            )
+        return table
 
 
-def report_json(report: ScanReport, run_id: str | None = None) -> str:
+def report_json(
+    report: ScanReport, findings: Iterable[Finding] = (), run_id: str | None = None
+) -> str:
     data = report.model_dump(mode="json")
-    data["findings_count"] = len(report.findings)
+    data["findings_count"] = report.finding_count
+    data["findings"] = [
+        f.model_dump(mode="json") | {"fingerprint": f.fingerprint} for f in findings
+    ]
     if run_id is not None:
         data["run_id"] = run_id
     return json.dumps(data, indent=2)

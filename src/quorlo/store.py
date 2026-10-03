@@ -11,11 +11,12 @@ Nothing here ever holds data from a scanned table: runs carry metadata and findi
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import sys
 import zlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,7 +26,7 @@ from pydantic import BaseModel, ConfigDict
 
 from quorlo.history import RunTarget, ScanRun
 from quorlo.models import Database
-from quorlo.readiness import ScanReport
+from quorlo.readiness import Finding, ScanReport
 
 
 class StoreError(Exception):
@@ -52,6 +53,17 @@ class RunSummary(BaseModel):
 
 class RunStore(Protocol):
     def save(self, run: ScanRun) -> None: ...
+
+    def _findings(self, run_id: str) -> tuple[Finding, ...]:
+        rows = self._conn.execute(
+            f"SELECT {', '.join(_FINDING_FIELDS.values())} FROM findings "
+            "WHERE run_id = ? ORDER BY rowid",
+            (run_id,),
+        )
+        return tuple(
+            Finding(**{field: row[column] for field, column in _FINDING_FIELDS.items()})
+            for row in rows
+        )
 
     def get(self, run_id: str) -> ScanRun:
         """Load a run by its id, or by a prefix that matches exactly one run."""
@@ -84,9 +96,45 @@ def default_store_path() -> Path:
     return base / "quorlo" / "quorlo.db"
 
 
-# Each entry upgrades the schema by one version; never edit one that has shipped.
-_MIGRATIONS = [
-    """
+class Migration(Protocol):
+    """One step up in the store's schema version."""
+
+    def apply(self, conn: sqlite3.Connection) -> None: ...
+
+
+class SqlMigration:
+    def __init__(self, script: str) -> None:
+        self._script = script
+
+    def apply(self, conn: sqlite3.Connection) -> None:
+        # Not executescript(): it commits first, which would break the step's transaction.
+        for statement in self.statements():
+            conn.execute(statement)
+
+    def statements(self) -> Iterator[str]:
+        """Split on statement boundaries as SQLite's own tokenizer sees them, so a ';'
+        inside a comment or string does not end a statement."""
+        pending = ""
+        for line in self._script.splitlines(keepends=True):
+            pending += line
+            if sqlite3.complete_statement(pending):
+                yield pending
+                pending = ""
+        if pending.strip():
+            raise ValueError(f"Incomplete SQL statement in migration: {pending.strip()[:60]}")
+
+
+class PythonMigration:
+    """A step that has to transform existing rows, not just reshape tables."""
+
+    def __init__(self, step: Callable[[sqlite3.Connection], None]) -> None:
+        self._step = step
+
+    def apply(self, conn: sqlite3.Connection) -> None:
+        self._step(conn)
+
+
+_SCHEMA_V1 = """
     CREATE TABLE runs (
         id              TEXT PRIMARY KEY,
         started_at      TEXT NOT NULL,          -- ISO 8601, UTC
@@ -125,8 +173,60 @@ _MIGRATIONS = [
     );
     CREATE INDEX findings_by_run ON findings (run_id);
     CREATE INDEX findings_by_fingerprint ON findings (fingerprint);
-    """,
+"""
+
+
+def _complete_finding_rows(conn: sqlite3.Connection) -> None:
+    """v2: findings move out of the report JSON into complete rows.
+
+    v1 kept each finding twice: in full inside the report blob, and partly as a row.
+    Fill in the missing columns from the blob, then drop findings from the blob.
+    """
+    for column in ("scope TEXT", "finding_key TEXT", "remedy TEXT"):
+        conn.execute(f"ALTER TABLE findings ADD COLUMN {column}")
+    for run_id, blob in conn.execute("SELECT id, report FROM runs").fetchall():
+        report = json.loads(zlib.decompress(blob))
+        for table in report["tables"]:
+            findings = table.pop("findings", [])
+            table["finding_count"] = len(findings)
+            for f in findings:
+                finding = Finding.model_validate(f)
+                conn.execute(
+                    "UPDATE findings SET scope = ?, finding_key = ?, remedy = ? "
+                    "WHERE run_id = ? AND fingerprint = ?",
+                    (finding.scope.value, finding.key, finding.remedy, run_id, finding.fingerprint),
+                )
+        conn.execute(
+            "UPDATE runs SET report = ? WHERE id = ?",
+            (zlib.compress(json.dumps(report).encode()), run_id),
+        )
+
+
+# Each entry upgrades the schema by one version; never edit one that has shipped.
+_MIGRATIONS: list[Migration] = [
+    SqlMigration(_SCHEMA_V1),
+    PythonMigration(_complete_finding_rows),
 ]
+
+
+# Finding field -> findings column. The fingerprint is derived, so it is stored but not read.
+_FINDING_FIELDS = {
+    "check_id": "check_id",
+    "dimension": "dimension",
+    "severity": "severity",
+    "scope": "scope",
+    "table": "table_name",
+    "column": "column_name",
+    "key": "finding_key",
+    "message": "message",
+    "remedy": "remedy",
+}
+_FINDING_COLUMNS = ("run_id", "fingerprint", *_FINDING_FIELDS.values())
+
+
+def _finding_values(finding: Finding) -> tuple[object, ...]:
+    data = finding.model_dump(mode="json")
+    return tuple(data[field] for field in _FINDING_FIELDS)
 
 
 def _target_key(target: RunTarget) -> str:
@@ -155,6 +255,7 @@ class SqliteRunStore:
         except (OSError, sqlite3.Error) as exc:
             raise StoreError(f"Cannot open the run store at {self.path}: {exc}") from None
         self._conn.row_factory = sqlite3.Row
+        self._conn.isolation_level = None  # transactions are begun explicitly, never implied
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._migrate()
 
@@ -165,23 +266,24 @@ class SqliteRunStore:
                 f"The run store at {self.path} was written by a newer Quorlo "
                 f"(schema {current}, this version knows {len(_MIGRATIONS)}). Upgrade Quorlo."
             )
-        for version, script in enumerate(_MIGRATIONS[current:], start=current + 1):
+        for version, migration in enumerate(_MIGRATIONS[current:], start=current + 1):
             # One transaction per step, so a failed upgrade leaves the previous version intact.
-            try:
-                self._conn.executescript(
-                    f"BEGIN; {script}; PRAGMA user_version = {version}; COMMIT;"
-                )
-            except sqlite3.Error as exc:
-                self._conn.rollback()
-                raise StoreError(f"Cannot upgrade the run store at {self.path}: {exc}") from None
+            with self._transaction(f"Cannot upgrade the run store at {self.path}") as conn:
+                migration.apply(conn)
+                conn.execute(f"PRAGMA user_version = {version}")
 
     @contextmanager
-    def _transaction(self) -> Iterator[sqlite3.Connection]:
+    def _transaction(self, failure: str = "Run store error") -> Iterator[sqlite3.Connection]:
+        self._conn.execute("BEGIN")
         try:
-            with self._conn:
-                yield self._conn
+            yield self._conn
         except sqlite3.Error as exc:
-            raise StoreError(f"Run store error: {exc}") from None
+            self._conn.rollback()
+            raise StoreError(f"{failure}: {exc}") from None
+        except BaseException:
+            self._conn.rollback()
+            raise
+        self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
@@ -215,7 +317,7 @@ class SqliteRunStore:
                     _schemas_text(run.schemas),
                     report.score,
                     len(report.tables),
-                    len(report.findings),
+                    report.finding_count,
                     _pack(report),
                     _pack(run.snapshot),
                 ),
@@ -232,20 +334,9 @@ class SqliteRunStore:
                 ],
             )
             conn.executemany(
-                "INSERT INTO findings VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                [
-                    (
-                        run.id,
-                        f.fingerprint,
-                        f.check_id,
-                        f.dimension.value,
-                        f.severity.value,
-                        f.table,
-                        f.column,
-                        f.message,
-                    )
-                    for f in report.findings
-                ],
+                f"INSERT INTO findings ({', '.join(_FINDING_COLUMNS)}) "
+                f"VALUES ({', '.join('?' * len(_FINDING_COLUMNS))})",
+                [(run.id, f.fingerprint, *_finding_values(f)) for f in run.findings],
             )
 
     # --- reading -------------------------------------------------------------------------
@@ -261,7 +352,19 @@ class SqliteRunStore:
             ),
             schemas=tuple(row["schemas"].split(",")) if row["schemas"] else None,
             report=ScanReport.model_validate_json(zlib.decompress(row["report"])),
+            findings=self._findings(row["id"]),
             snapshot=Database.model_validate_json(zlib.decompress(row["snapshot"])),
+        )
+
+    def _findings(self, run_id: str) -> tuple[Finding, ...]:
+        rows = self._conn.execute(
+            f"SELECT {', '.join(_FINDING_FIELDS.values())} FROM findings "
+            "WHERE run_id = ? ORDER BY rowid",
+            (run_id,),
+        )
+        return tuple(
+            Finding(**{field: row[column] for field, column in _FINDING_FIELDS.items()})
+            for row in rows
         )
 
     def get(self, run_id: str) -> ScanRun:

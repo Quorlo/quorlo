@@ -112,7 +112,7 @@ def test_connection_rejects_writes(connector):
 
 
 def test_demo_scores_show_a_range(connector):
-    report = evaluate(read_database(connector, ["retail_raw"]))
+    report = evaluate(read_database(connector, ["retail_raw"])).report
     tables = {t.table.rsplit(".", 1)[1]: t for t in report.tables}
     assert tables["dim_product"].score == 1.0
     assert tables["stg_imp_01"].dimensions[Dimension.MEANING] == 0.0
@@ -120,12 +120,14 @@ def test_demo_scores_show_a_range(connector):
 
 
 def test_demo_problems_land_in_the_right_dimension(connector):
-    report = evaluate(read_database(connector, ["retail_raw"]))
-    tables = {t.table.rsplit(".", 1)[1]: t for t in report.tables}
+    evaluation = evaluate(read_database(connector, ["retail_raw"]))
+    tables = {t.table.rsplit(".", 1)[1]: t for t in evaluation.report.tables}
 
     # Unmarked personal data in the customer master only.
     pii = {
-        f.column for f in tables["cust_mstr"].findings if f.check_id == "column.pii.unclassified"
+        f.column
+        for f in evaluation.findings_for("quorlo_demo.retail_raw.cust_mstr")
+        if f.check_id == "column.pii.unclassified"
     }
     assert pii == {"nm", "eml", "phn", "addr1", "pc"}
     assert [n for n, t in tables.items() if t.dimensions[Dimension.GOVERNANCE] < 1] == ["cust_mstr"]

@@ -15,6 +15,12 @@ from quorlo.store import (
     default_store_path,
 )
 
+
+def _evaluated(db, checks=None):
+    evaluation = evaluate(db, checks) if checks else evaluate(db)
+    return evaluation.report, evaluation.findings
+
+
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
 
 
@@ -36,7 +42,7 @@ def database(description=None, location="postgres://h:5432/db"):
 def run(db=None, at=T0, schemas=None):
     db = db or database()
     return ScanRun.record(
-        db, evaluate(db), started_at=at, finished_at=at + timedelta(seconds=3), schemas=schemas
+        db, *_evaluated(db), started_at=at, finished_at=at + timedelta(seconds=3), schemas=schemas
     )
 
 
@@ -53,7 +59,7 @@ def test_satisfies_protocol(store):
 
 def test_creates_parent_directory_and_schema(tmp_path, store):
     assert (tmp_path / "nested" / "quorlo.db").exists()
-    assert store.schema_version == 1
+    assert store.schema_version == 2
 
 
 def test_save_and_get_round_trip(store):
@@ -99,7 +105,7 @@ def test_list_newest_first_and_by_target(store):
     summary = store.list(target=a.target)[0]
     assert (summary.tables, summary.findings, summary.score) == (
         1,
-        len(b.report.findings),
+        len(b.findings),
         b.report.score,
     )
 
@@ -140,7 +146,7 @@ def test_rows_are_queryable_with_plain_sql(tmp_path):
     ).fetchone()[0]
     assert governance == 0.0  # the email column
     fingerprints = {row[0] for row in conn.execute("SELECT fingerprint FROM findings")}
-    assert fingerprints == {f.fingerprint for f in r.report.findings}
+    assert fingerprints == {f.fingerprint for f in r.findings}
 
 
 def test_duplicate_run_id_is_an_error(store):
@@ -164,7 +170,7 @@ def test_reopening_does_not_rerun_migrations(tmp_path):
     with SqliteRunStore(path) as s:
         s.save(r)
     with SqliteRunStore(path) as s:
-        assert s.schema_version == 1
+        assert s.schema_version == 2
         assert s.get(r.id) == r
 
 
@@ -175,3 +181,51 @@ def test_default_store_path(monkeypatch, tmp_path):
     monkeypatch.setattr("sys.platform", "linux")
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
     assert default_store_path() == tmp_path / "xdg" / "quorlo" / "quorlo.db"
+
+
+def test_upgrades_a_version_1_store_without_losing_findings(tmp_path):
+    """v1 kept full findings inside the report JSON; v2 keeps them as complete rows."""
+    import json
+    import zlib
+
+    from quorlo.store import _SCHEMA_V1, SqlMigration
+
+    r = run()
+    path = tmp_path / "v1.db"
+    conn = sqlite3.connect(path)
+    for statement in SqlMigration(_SCHEMA_V1).statements():
+        conn.execute(statement)
+    v1_report = r.report.model_dump(mode="json")
+    for table in v1_report["tables"]:
+        table.pop("finding_count")
+        table["findings"] = [
+            f.model_dump(mode="json") for f in r.findings if f.table == table["table"]
+        ]
+    conn.execute(
+        "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (r.id, r.started_at.isoformat(), r.finished_at.isoformat(), "0.0.1", "postgres",
+         r.target.location, "db", "postgres\x1fpostgres://h:5432/db\x1fdb", None, r.report.score,
+         1, len(r.findings), zlib.compress(json.dumps(v1_report).encode()),
+         zlib.compress(r.snapshot.model_dump_json().encode())),
+    )  # fmt: skip
+    conn.executemany(
+        "INSERT INTO findings VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [(r.id, f.fingerprint, f.check_id, f.dimension.value, f.severity.value, f.table,
+          f.column, f.message) for f in r.findings],
+    )  # fmt: skip
+    conn.execute("PRAGMA user_version = 1")
+    conn.commit()
+    conn.close()
+
+    with SqliteRunStore(path) as store:
+        assert store.schema_version == 2
+        upgraded = store.get(r.id)
+    assert upgraded.findings == r.findings  # remedy, scope and key recovered from the blob
+    assert upgraded.report == r.report  # finding_count filled in, findings moved out
+
+
+def test_sql_migration_splits_on_real_statement_ends_only():
+    from quorlo.store import SqlMigration
+
+    script = "CREATE TABLE a (x TEXT); -- a comment; with a semicolon\nCREATE TABLE b (y TEXT);\n"
+    assert len(list(SqlMigration(script).statements())) == 2

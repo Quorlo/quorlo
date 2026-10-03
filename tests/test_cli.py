@@ -137,7 +137,8 @@ def test_scan_json_output(stub_registry):
     scores = {t["table"]: t["score"] for t in data["tables"]}
     assert scores["db.public.customers"] > scores["db.public.stg_imp"]
     assert data["score"] == pytest.approx(sum(scores.values()) / 2)
-    assert data["findings_count"] == len([f for t in data["tables"] for f in t["findings"]])
+    assert data["findings_count"] == len(data["findings"]) > 0
+    assert all("fingerprint" in f for f in data["findings"])
 
 
 def test_scan_reads_dsn_from_env_and_passes_schemas(stub_registry, monkeypatch):
@@ -184,7 +185,7 @@ def test_scan_keeps_schema_in_names_when_several_schemas():
             Schema(name="mart", tables=(make_table("orders", schema="mart"),)),
         ),
     )
-    assert _name_prefix(evaluate(db)) == "db."
+    assert _name_prefix(evaluate(db).report) == "db."
 
 
 # --- run history ---------------------------------------------------------------------

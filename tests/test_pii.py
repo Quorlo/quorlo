@@ -1,11 +1,9 @@
 import pytest
 
 from factories import make_column, make_table
-from quorlo.readiness import Dimension, ScanContext, evaluate_table
+from quorlo.readiness import Dimension, evaluate_table
 from quorlo.readiness.checks import PiiUnclassified, is_classified_as_pii
 from quorlo.readiness.names import pii_category
-
-CTX = ScanContext(())
 
 
 @pytest.mark.parametrize(
@@ -90,15 +88,16 @@ def test_pii_check_reports_each_unclassified_column():
     )
     check = PiiUnclassified()
     assert check.dimension is Dimension.GOVERNANCE
-    findings = list(check.run(table, CTX))
+    findings = list(check.run(table))
     assert [f.column for f in findings] == ["nm", "phn"]
     assert "person name" in findings[0].message
 
 
 def test_pii_check_scores_the_whole_table():
     table = make_table("customers", columns=[make_column(c) for c in ("email", "phone", "notes")])
-    result = evaluate_table(table, [PiiUnclassified()])
+    evaluation = evaluate_table(table, [PiiUnclassified()])
+    (result,) = evaluation.report.tables
     (check,) = result.checks
     assert (check.evaluated, check.failed) == (1, 1)
     assert result.dimensions[Dimension.GOVERNANCE] == 0.0
-    assert len(result.findings) == 2
+    assert len(evaluation.findings) == 2

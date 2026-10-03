@@ -47,6 +47,7 @@ class ScanRun(_Frozen):
         default=None, description="Schemas the scan was limited to; None means all of them."
     )
     report: ScanReport
+    findings: tuple[Finding, ...] = ()
     snapshot: Database = Field(description="The scanned metadata. Metadata only, never data.")
 
     @field_validator("started_at", "finished_at")
@@ -65,6 +66,7 @@ class ScanRun(_Frozen):
         cls,
         database: Database,
         report: ScanReport,
+        findings: Sequence[Finding],
         started_at: datetime,
         finished_at: datetime | None = None,
         schemas: Sequence[str] | None = None,
@@ -79,6 +81,7 @@ class ScanRun(_Frozen):
             ),
             schemas=tuple(sorted(schemas)) if schemas else None,
             report=report,
+            findings=tuple(findings),
             snapshot=database,
         )
 
@@ -117,8 +120,8 @@ class RunDiff(_Frozen):
     )
 
 
-def _findings_by_fingerprint(report: ScanReport) -> dict[str, Finding]:
-    return {f.fingerprint: f for f in report.findings}
+def _findings_by_fingerprint(run: ScanRun) -> dict[str, Finding]:
+    return {f.fingerprint: f for f in run.findings}
 
 
 def _comparability_warnings(base: ScanRun, head: ScanRun) -> list[str]:
@@ -152,8 +155,8 @@ def _comparability_warnings(base: ScanRun, head: ScanRun) -> list[str]:
 
 def diff_runs(base: ScanRun, head: ScanRun) -> RunDiff:
     """What changed from `base` to `head`. Findings are matched by fingerprint."""
-    before = _findings_by_fingerprint(base.report)
-    after = _findings_by_fingerprint(head.report)
+    before = _findings_by_fingerprint(base)
+    after = _findings_by_fingerprint(head)
     new = [after[k] for k in after.keys() - before.keys()]
     resolved = [before[k] for k in before.keys() - after.keys()]
 

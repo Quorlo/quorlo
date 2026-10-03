@@ -1,6 +1,6 @@
-from factories import make_column, make_table
+from factories import estate_findings_for, make_column, make_table
 from quorlo.models import TypeKind
-from quorlo.readiness import DEFAULT_CHECKS, Dimension, Finding, ScanContext, Scope, Severity
+from quorlo.readiness import DEFAULT_CHECKS, Dimension, Finding, Scope, Severity
 from quorlo.readiness.checks import DuplicateSuspected
 
 
@@ -42,7 +42,7 @@ def test_one_duplicate_finding_per_table_whatever_the_number_of_matches():
         return make_table(name, columns=[make_column("d", kind=TypeKind.DATE)])
 
     a, b, c = t("orders"), t("orders_v2"), t("orders_old")
-    (finding,) = DuplicateSuspected().run(a, ScanContext.of_tables([a, b, c]))
+    (finding,) = estate_findings_for(DuplicateSuspected(), [a, b, c], a)
     assert finding.key is None
     assert "public.orders_old, public.orders_v2" in finding.message
 

@@ -2,11 +2,10 @@ import pytest
 
 from factories import make_column, make_table
 from quorlo.models import TableKind, TypeKind
-from quorlo.readiness import Dimension, ScanContext
+from quorlo.readiness import Dimension
 from quorlo.readiness.checks import FreshnessUntracked
 from quorlo.readiness.names import is_freshness_column_name
 
-CTX = ScanContext(())
 check = FreshnessUntracked()
 
 
@@ -38,21 +37,21 @@ def ts(name, kind=TypeKind.TIMESTAMP):
 def test_table_with_updated_at_passes():
     table = make_table(columns=[make_column("id"), ts("updated_at")])
     assert check.dimension is Dimension.TRUST
-    assert not list(check.run(table, CTX))
+    assert not list(check.run(table))
 
 
 def test_date_typed_load_column_counts():
-    assert not list(check.run(make_table(columns=[ts("load_date", TypeKind.DATE)]), CTX))
+    assert not list(check.run(make_table(columns=[ts("load_date", TypeKind.DATE)])))
 
 
 def test_freshness_name_with_wrong_type_does_not_count():
     table = make_table(columns=[make_column("updated_by", kind=TypeKind.STRING)])
-    assert len(list(check.run(table, CTX))) == 1
+    assert len(list(check.run(table))) == 1
 
 
 def test_table_without_freshness_column_fails():
     table = make_table(columns=[make_column("id"), ts("created_at")])
-    (finding,) = check.run(table, CTX)
+    (finding,) = check.run(table)
     assert finding.column is None
     assert "updated_at" in finding.remedy
 

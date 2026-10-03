@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Hashable, Iterable, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Iterable
 from enum import StrEnum
-from typing import Any, ClassVar, Protocol, TypeVar, runtime_checkable
+from typing import ClassVar, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from quorlo.models import Database, Table
+from quorlo.models import Table
 
 
 class Dimension(StrEnum):
@@ -83,57 +82,15 @@ class Finding(BaseModel):
         return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()[:16]
 
 
-_T = TypeVar("_T")
+class CheckInfo(Protocol):
+    """What every check declares about itself.
 
+    A check only reports what is wrong. It never computes a score: the engine derives how
+    many units were evaluated from `scope` (one per table, or one per column) and from
+    `applies_to`.
 
-@dataclass(frozen=True)
-class ScanContext:
-    """Everything that was scanned, for checks that compare a table with the others."""
-
-    tables: tuple[Table, ...]
-    _by_name: dict[str, Table] = field(init=False, repr=False, compare=False)
-    _memo: dict[Hashable, Any] = field(init=False, repr=False, compare=False)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "_by_name", {t.qualified_name: t for t in self.tables})
-        object.__setattr__(self, "_memo", {})
-
-    @classmethod
-    def of(cls, database: Database) -> ScanContext:
-        return cls(tuple(database.iter_tables()))
-
-    @classmethod
-    def of_tables(cls, tables: Sequence[Table]) -> ScanContext:
-        return cls(tuple(tables))
-
-    def table(self, qualified_name: str) -> Table | None:
-        return self._by_name.get(qualified_name)
-
-    def others(self, table: Table) -> Iterable[Table]:
-        return (t for t in self.tables if t.qualified_name != table.qualified_name)
-
-    def memo(self, key: Hashable, build: Callable[[], _T]) -> _T:
-        """Build something derived from the scanned tables once per scan, e.g. an index.
-
-        Cross-table checks run once per table; without this, each run would rebuild
-        the same index and the check would cost O(n²).
-        """
-        if key not in self._memo:
-            self._memo[key] = build()
-        return self._memo[key]
-
-
-@runtime_checkable
-class Check(Protocol):
-    """A readiness check.
-
-    A check only reports what is wrong. It never computes a score: the engine derives
-    how many units were evaluated from `scope` (one per table, or one per column) and
-    from `applies_to`. `context` holds every scanned table, for checks that compare
-    tables; most checks ignore it.
-
-    Bump `version` whenever a change to the check's rules can change its findings, so
-    run comparisons can tell a stricter check apart from data that got worse.
+    Bump `version` whenever a change to the check's rules can change its findings, so run
+    comparisons can tell a stricter check apart from data that got worse.
     """
 
     id: ClassVar[str]
@@ -146,4 +103,39 @@ class Check(Protocol):
 
     def applies_to(self, table: Table) -> bool: ...
 
-    def run(self, table: Table, context: ScanContext) -> Iterable[Finding]: ...
+
+@runtime_checkable
+class TableCheck(CheckInfo, Protocol):
+    """Judges one table on its own. Most checks are this kind."""
+
+    def run(self, table: Table) -> Iterable[Finding]: ...
+
+
+@runtime_checkable
+class EstateCheckRun(Protocol):
+    """One scan's worth of state for an `EstateCheck`."""
+
+    def observe(self, table: Table) -> None:
+        """Called once per table the check applies to, as schemas stream past.
+
+        Keep only what the final judgement needs, not the table itself, so memory grows
+        with the number of tables rather than with their columns.
+        """
+        ...
+
+    def findings(self) -> Iterable[Finding]:
+        """Called once, after every table has been observed."""
+        ...
+
+
+@runtime_checkable
+class EstateCheck(CheckInfo, Protocol):
+    """Judges tables against the rest of the estate, e.g. to spot near-duplicates.
+
+    The check object itself stays stateless; `start()` returns a fresh run per scan.
+    """
+
+    def start(self) -> EstateCheckRun: ...
+
+
+Check = TableCheck | EstateCheck

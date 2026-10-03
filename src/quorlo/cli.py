@@ -21,10 +21,10 @@ from quorlo.connector import ConnectionConfig, ConnectorError, read_database
 from quorlo.history import ScanRun, diff_runs
 from quorlo.readiness import evaluate
 from quorlo.render import (
+    ReportView,
     change_line,
     diff_json,
     render_diff,
-    render_report,
     render_runs,
     report_json,
 )
@@ -141,17 +141,20 @@ def scan(
         except ConnectorError as exc:
             _fail(str(exc))
 
-        report = evaluate(database)
-        run = ScanRun.record(database, report, started_at=started_at, schemas=schema)
+        evaluation = evaluate(database)
+        report = evaluation.report
+        run = ScanRun.record(
+            database, report, evaluation.findings, started_at=started_at, schemas=schema
+        )
         previous = None
         if store is not None:
             previous = store.latest(run.target, run.schemas, before=run.started_at)
             store.save(run)
 
     if output is OutputFormat.JSON:
-        typer.echo(report_json(report, run_id=run.id if save else None))
+        typer.echo(report_json(report, run.findings, run_id=run.id if save else None))
         return
-    render_report(report, console, details=details)
+    ReportView(report, run.findings).render(console, details=details)
     if previous is not None:
         console.print(change_line(diff_runs(previous, run), previous, datetime.now(UTC)))
     if save:
@@ -192,10 +195,10 @@ def runs_show(
         except RunNotFoundError as exc:
             _fail(str(exc))
     if output is OutputFormat.JSON:
-        typer.echo(report_json(run.report, run_id=run.id))
+        typer.echo(report_json(run.report, run.findings, run_id=run.id))
         return
     console.print(f"[dim]Run {run.id}, {run.started_at:%Y-%m-%d %H:%M %Z}[/dim]")
-    render_report(run.report, console, details=details)
+    ReportView(run.report, run.findings).render(console, details=details)
 
 
 @app.command()
