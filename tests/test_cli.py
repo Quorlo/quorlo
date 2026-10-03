@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator, Sequence
 from typing import ClassVar
 
@@ -242,7 +243,12 @@ def test_runs_lists_newest_first_and_show_reprints(stub_registry, monkeypatch):
     assert listing.index(second) < listing.index(first)
     assert runner.invoke(app, ["runs", "--limit", "1"]).output.count("stub:db") == 1
 
-    shown = runner.invoke(app, ["runs", "show", first[:18]])
+    # The shortest prefix that tells the two runs apart. Both start in the same second, so
+    # a fixed-length prefix could match both (and did, 1 time in 16).
+    prefix = (
+        os.path.commonprefix([first, second]) + first[len(os.path.commonprefix([first, second]))]
+    )
+    shown = runner.invoke(app, ["runs", "show", prefix])
     assert shown.exit_code == 0, shown.output
     assert f"Run {first}" in shown.output
     assert "stg_imp" in shown.output
