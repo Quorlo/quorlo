@@ -139,3 +139,12 @@ def test_report_records_check_versions():
         "table.primary_key.missing": 1,
         "column.name.cryptic": 1,
     }
+
+
+def test_scan_context_memo_builds_once_per_context():
+    builds = []
+    ctx = ScanContext.of_tables([make_table("a")])
+    for _ in range(3):
+        assert ctx.memo("index", lambda: builds.append(1) or "built") == "built"
+    assert len(builds) == 1
+    assert ScanContext.of_tables([]).memo("index", lambda: "fresh") == "fresh"

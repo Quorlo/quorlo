@@ -37,14 +37,14 @@ def test_no_column_is_not_confused_with_empty_key():
     assert finding(column=None, key="c").fingerprint != finding(column="c", key=None).fingerprint
 
 
-def test_duplicate_findings_are_told_apart_by_the_other_table():
+def test_one_duplicate_finding_per_table_whatever_the_number_of_matches():
     def t(name):
         return make_table(name, columns=[make_column("d", kind=TypeKind.DATE)])
 
     a, b, c = t("orders"), t("orders_v2"), t("orders_old")
-    findings = list(DuplicateSuspected().run(a, ScanContext.of_tables([a, b, c])))
-    assert {f.key for f in findings} == {"db.public.orders_v2", "db.public.orders_old"}
-    assert len({f.fingerprint for f in findings}) == 2
+    (finding,) = DuplicateSuspected().run(a, ScanContext.of_tables([a, b, c]))
+    assert finding.key is None
+    assert "public.orders_old, public.orders_v2" in finding.message
 
 
 def test_every_default_check_has_a_version():

@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from factories import make_column, make_table
@@ -30,6 +32,11 @@ def test_different_concept(a, b):
     assert concept_key(a) != concept_key(b)
 
 
+def test_numbers_after_a_marker_are_dropped():
+    assert concept_key("orders_bak_2023") == concept_key("orders") == {"orders"}
+    assert concept_key("revenue_v2") == {"revenue"}
+
+
 def test_markers_only_name_has_no_concept():
     assert concept_key("tmp_v2") == frozenset()
 
@@ -45,6 +52,35 @@ def test_type_overlap():
     assert column_type_overlap(a, b) == pytest.approx(2 / 3)
     assert column_type_overlap(a, revenue("c", TypeKind.STRING)) == 0.0
     assert column_type_overlap(revenue("d"), revenue("e")) == 0.0
+
+
+def test_message_names_at_most_five_matches():
+    tables = [revenue("orders", TypeKind.INTEGER)] + [
+        revenue(f"orders_v{i}", TypeKind.INTEGER) for i in range(2, 10)
+    ]
+    (finding,) = check.run(tables[0], ScanContext.of_tables(tables))
+    assert finding.message.count("public.orders_v") == 5
+    assert "and 3 more" in finding.message
+
+
+def test_check_version_records_the_rule_change():
+    assert check.version == 2
+
+
+def test_numbered_tables_at_scale_are_fast_and_not_duplicates():
+    tables = [revenue(f"table_{i}", TypeKind.INTEGER, TypeKind.STRING) for i in range(5000)]
+    ctx = ScanContext.of_tables(tables)
+    started = time.perf_counter()
+    findings = [f for t in tables for f in check.run(t, ctx)]
+    assert findings == []
+    assert time.perf_counter() - started < 2.0
+
+
+def test_findings_grow_linearly_with_many_copies():
+    # 300 copies of one table: one finding each, not one per pair (which would be 89,700).
+    tables = [revenue(f"orders_v{i}", TypeKind.INTEGER) for i in range(300)]
+    ctx = ScanContext.of_tables(tables)
+    assert sum(len(list(check.run(t, ctx))) for t in tables) == 300
 
 
 def test_flags_both_tables_of_a_pair():

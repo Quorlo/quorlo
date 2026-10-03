@@ -53,10 +53,10 @@ Another scanned table looks like the same data, and neither says which one to us
 
 Two tables match when both are true:
 
-- their names have the same words once version and copy markers are dropped and word order is ignored. The markers are `v`, `old`, `new`, `bak`, `backup`, `copy`, `tmp`, `temp`, `final`, `latest`, `prev` and numbers, so `revenue_daily`, `daily_revenue_v2` and `revenue_daily_bak_2023` all match;
+- their names have the same words once version and copy markers are dropped and word order is ignored. The markers are `v`, `old`, `new`, `bak`, `backup`, `copy`, `tmp`, `temp`, `final`, `latest` and `prev`, plus a number right after one of them. So `revenue_daily`, `daily_revenue_v2` and `revenue_daily_bak_2023` all match, while `orders_2023` and `orders_2024`, or `table_1` and `table_2`, stay different tables;
 - at least half of their column types are shared.
 
-Tables are compared across schemas too, so `raw.orders` and `analytics.orders` can match. Each table of a pair gets a finding that names the other.
+Tables are compared across schemas too, so `raw.orders` and `analytics.orders` can match. Each table with matches gets one finding that names up to five of them ("and 3 more"), however many there are.
 
 The pair counts as resolved, with no findings, when either table declares its status: a `certified` or `deprecated` tag, or a description that says *certified*, *source of truth*, *deprecated*, *superseded* or *do not use*.
 

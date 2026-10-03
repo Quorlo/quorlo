@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Iterable
 from typing import ClassVar
 
@@ -209,10 +209,44 @@ def declares_status(table: Table) -> bool:
 
 def column_type_overlap(a: Table, b: Table) -> float:
     """Share of column types two tables have in common, from 0 to 1 (multiset Jaccard)."""
-    kinds_a = Counter(c.data_type.kind for c in a.columns)
-    kinds_b = Counter(c.data_type.kind for c in b.columns)
+    return _type_overlap(_column_kinds(a), _column_kinds(b))
+
+
+def _column_kinds(table: Table) -> Counter[TypeKind]:
+    return Counter(c.data_type.kind for c in table.columns)
+
+
+def _type_overlap(kinds_a: Counter[TypeKind], kinds_b: Counter[TypeKind]) -> float:
     union = sum((kinds_a | kinds_b).values())
     return sum((kinds_a & kinds_b).values()) / union if union else 0.0
+
+
+class _TableIndex:
+    """Scanned tables grouped by what their names are about, built once per scan.
+
+    Looking up candidates by key keeps the duplicate check O(n) over the estate instead
+    of comparing every table with every other one.
+    """
+
+    def __init__(self, tables: Iterable[Table]) -> None:
+        self._by_key: dict[frozenset[str], list[Table]] = defaultdict(list)
+        self._kinds: dict[str, Counter[TypeKind]] = {}
+        for table in tables:
+            key = concept_key(table.name)
+            if key:
+                self._by_key[key].append(table)
+                self._kinds[table.qualified_name] = _column_kinds(table)
+
+    def candidates(self, table: Table) -> list[Table]:
+        """Other tables whose names are about the same thing."""
+        return [
+            t
+            for t in self._by_key.get(concept_key(table.name), ())
+            if t.qualified_name != table.qualified_name
+        ]
+
+    def type_overlap(self, a: Table, b: Table) -> float:
+        return _type_overlap(self._kinds[a.qualified_name], self._kinds[b.qualified_name])
 
 
 class DuplicateSuspected(_BaseCheck):
@@ -221,31 +255,42 @@ class DuplicateSuspected(_BaseCheck):
     scope = Scope.TABLE
     severity = Severity.MEDIUM
     weight = 1.0
+    # 2: one finding per table instead of one per matching pair, and plain numbers in a
+    # name (orders_2023) no longer count as version markers.
+    version = 2
     description = "No other table looks like the same thing without saying which one to use."
 
     min_type_overlap: ClassVar[float] = 0.5
+    max_named_matches: ClassVar[int] = 5
 
-    def is_duplicate(self, a: Table, b: Table) -> bool:
-        key = concept_key(a.name)
-        return (
-            bool(key)
-            and key == concept_key(b.name)
-            and column_type_overlap(a, b) >= self.min_type_overlap
-        )
+    def matches(self, table: Table, context: ScanContext) -> list[Table]:
+        """Unresolved tables that look like the same data as `table`."""
+        if declares_status(table):
+            return []
+        index = context.memo((self.id, self.version), lambda: _TableIndex(context.tables))
+        return [
+            other
+            for other in index.candidates(table)
+            if index.type_overlap(table, other) >= self.min_type_overlap
+            and not declares_status(other)
+        ]
 
     def run(self, table: Table, context: ScanContext) -> Iterable[Finding]:
-        for other in context.others(table):
-            if self.is_duplicate(table, other) and not (
-                declares_status(table) or declares_status(other)
-            ):
-                other_name = f"{other.ref.schema_name}.{other.name}"
-                yield self._finding(
-                    table,
-                    f"Looks like the same data as {other_name}, and neither says which to use.",
-                    "Mark the trusted table as certified (a tag, or 'source of truth' in its "
-                    "description), and the other as deprecated, or remove one.",
-                    key=other.qualified_name,
-                )
+        matches = self.matches(table, context)
+        if matches:
+            yield self._finding(
+                table,
+                f"Looks like the same data as {self._describe(matches)}, "
+                "and nothing says which to use.",
+                "Mark the trusted table as certified (a tag, or 'source of truth' in its "
+                "description), and the others as deprecated, or remove them.",
+            )
+
+    def _describe(self, matches: list[Table]) -> str:
+        names = sorted(f"{t.ref.schema_name}.{t.name}" for t in matches)
+        shown = ", ".join(names[: self.max_named_matches])
+        hidden = len(names) - self.max_named_matches
+        return f"{shown} and {hidden} more" if hidden > 0 else shown
 
 
 DEFAULT_CHECKS: tuple[Check, ...] = (
