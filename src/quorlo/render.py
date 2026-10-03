@@ -142,20 +142,19 @@ def _count(n: int, noun: str, plural: str | None = None) -> str:
     return f"{n:,} {noun if n == 1 else plural or noun + 's'}"
 
 
-def stats_line(stats: ScanStats) -> Text:
-    """'Scanned 1 schema, 8 tables, 47 columns in 0.42s: fetch 0.12s (4 queries) · ...'"""
-    line = Text(
+def stats_lines(stats: ScanStats) -> list[Text]:
+    """'Scanned 2 schemas, 8 tables, 39 columns in 0.42s', then the time per phase."""
+    size = (
         f"Scanned {_count(stats.schemas, 'schema')}, {_count(stats.tables, 'table')}, "
-        f"{_count(stats.columns, 'column')} in {stats.seconds:.2f}s: ",
-        style="dim",
+        f"{_count(stats.columns, 'column')} in {stats.seconds:.2f}s"
     )
-    parts = []
+    phases = []
     for phase in Phase:
         part = f"{phase.value} {stats.phases.get(phase, 0.0):.2f}s"
         if phase is Phase.FETCH:
             part += f" ({_count(stats.queries, 'query', 'queries')})"
-        parts.append(part)
-    return line.append(" · ".join(parts), style="dim")
+        phases.append(part)
+    return [Text(size, style="dim"), Text("  " + " · ".join(phases), style="dim")]
 
 
 # --- Run history ---------------------------------------------------------------------

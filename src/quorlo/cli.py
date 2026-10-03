@@ -27,7 +27,7 @@ from quorlo.render import (
     diff_json,
     render_diff,
     report_json,
-    stats_line,
+    stats_lines,
 )
 from quorlo.scanner import Scanner, ScanOutcome
 from quorlo.store import (
@@ -160,7 +160,8 @@ def _show_scan(outcome: ScanOutcome, scanner: Scanner, output: OutputFormat, det
     ReportView(outcome.report, findings).render(console, details=details)
     if outcome.since_last_run is not None:
         console.print(change_line(outcome.since_last_run, datetime.now(UTC)))
-    console.print(stats_line(outcome.stats))
+    for line in stats_lines(outcome.stats):
+        console.print(line)
     if run_id:
         console.print(f"[dim]Saved as run {run_id}.[/dim]")
 

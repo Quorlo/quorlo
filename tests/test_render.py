@@ -3,7 +3,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from quorlo.history import ScoreChange
-from quorlo.render import _ago, _delta_text
+from quorlo.render import _ago, _delta_text, stats_lines
+from quorlo.stats import Phase, ScanStats
 
 
 @pytest.mark.parametrize(
@@ -27,3 +28,18 @@ def test_delta_matches_the_numbers_shown(before, after, expected):
 def test_ago(seconds, expected):
     now = datetime(2026, 10, 3, tzinfo=UTC)
     assert _ago(now - timedelta(seconds=seconds), now) == expected
+
+
+def test_stats_lines():
+    stats = ScanStats(
+        seconds=0.42,
+        phases={Phase.FETCH: 0.12, Phase.CHECKS: 0.2, Phase.SCORING: 0.01, Phase.PERSISTENCE: 0.09},
+        queries=1,
+        rows=10,
+        schemas=1,
+        tables=8,
+        columns=47,
+    )
+    size, phases = (line.plain for line in stats_lines(stats))
+    assert size == "Scanned 1 schema, 8 tables, 47 columns in 0.42s"
+    assert phases == "  fetch 0.12s (1 query) · checks 0.20s · scoring 0.01s · persistence 0.09s"
