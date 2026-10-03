@@ -9,6 +9,10 @@ Thanks for your interest. Quorlo is pre-alpha, so the shape of the project is st
 - **Report issues.** Once code lands, open an issue for bugs or unclear behavior, with steps to reproduce.
 - **Add a connector.** Connectors are plugins, so new platforms can be added without touching the core. Please open a Discussion first so we can agree on scope.
 
+## Project conventions
+
+[AGENTS.md](AGENTS.md) describes how Quorlo is built: its principles, package layout, architecture and coding conventions. It's written for AI coding agents and people alike, so read it before your first change.
+
 ## Development setup
 
 Quorlo is written in Python.
