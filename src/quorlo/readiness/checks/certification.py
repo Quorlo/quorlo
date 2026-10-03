@@ -68,7 +68,7 @@ class DuplicateSuspected(BaseCheck):
     version = 2
     description = "No other table looks like the same thing without saying which one to use."
     summary = "looks like the same data as another table"
-    fix_hint = "mark the one to use: COMMENT ON TABLE {table} IS 'Source of truth for ...';"
+    fix_hint = "COMMENT ON TABLE {table} IS 'Source of truth for <concept>.';  -- or 'Deprecated'"
 
     min_type_overlap: ClassVar[float] = 0.5
     max_named_matches: ClassVar[int] = 5

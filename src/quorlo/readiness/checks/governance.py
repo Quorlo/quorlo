@@ -33,7 +33,7 @@ class PiiUnclassified(BaseCheck):
     weight = 1.0
     description = "Columns that look like personal data are marked as such."
     summary = "looks like personal data, not marked as PII"
-    fix_hint = "tag as PII, or say so: COMMENT ON COLUMN {table}.{column} IS '<meaning>. PII.';"
+    fix_hint = "tag it as PII, or end its description with 'PII.'"
 
     def run(self, table: Table) -> Iterable[Finding]:
         for col in table.columns:

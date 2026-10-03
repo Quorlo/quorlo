@@ -99,6 +99,10 @@ class RunStore(Protocol):
         """Load a finished run by its id, or by a prefix that matches exactly one run."""
         ...
 
+    def summary(self, run_id: str) -> RunSummary:
+        """A finished run's id, target and counts, by id or unique prefix."""
+        ...
+
     def report(self, run_id: str) -> ScanReport:
         """A finished run's scores, without loading its findings."""
         ...

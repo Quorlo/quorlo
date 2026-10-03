@@ -309,3 +309,76 @@ def test_unwritable_store_is_a_clean_error(stub_registry, tmp_path):
     )
     assert result.exit_code == 2, result.exception
     assert "Cannot open the run store" in result.output
+
+
+# --- quorlo findings ------------------------------------------------------------------
+
+
+def test_findings_shows_the_latest_run_worst_table_first(stub_registry):
+    run_id = json.loads(scan_stub("--format", "json").output)["run_id"]
+    result = runner.invoke(app, ["findings"])
+    assert result.exit_code == 0, result.output
+    assert f"Findings in run {run_id}" in result.output
+    out = result.output
+    assert out.index("public.stg_imp") < out.index("What is it?")  # worst table first
+    assert "column.description.missing" in out
+    assert "c1, f2 · no column description" in out  # collapsed: one line, both columns
+    assert "fix: COMMENT ON COLUMN public.stg_imp.<column>" in out
+
+
+def test_findings_for_an_older_run_by_prefix(stub_registry, monkeypatch):
+    first = json.loads(scan_stub("--format", "json").output)["run_id"]
+    monkeypatch.setattr(StubConnector, "staging_documented", True)
+    scan_stub()
+    out = runner.invoke(app, ["findings", "--run", first]).output
+    assert f"Findings in run {first}" in out
+    assert "table.description.missing" in out  # fixed in the later run, not in this one
+
+
+def test_findings_filters(stub_registry):
+    scan_stub()
+    by_check = runner.invoke(app, ["findings", "--check", "column.name.cryptic"]).output
+    assert "column.name.cryptic" in by_check
+    assert "column.description.missing" not in by_check
+    by_dimension = runner.invoke(app, ["findings", "-d", "governance"]).output
+    assert "No findings match." in by_dimension
+    by_table = runner.invoke(app, ["findings", "-t", "customers"]).output
+    assert "public.customers  (88%, 1 finding)" in by_table  # singular, not "1 findings"
+    assert "table.freshness.untracked" in by_table
+    combined = runner.invoke(app, ["findings", "-t", "customers", "-d", "meaning"]).output
+    assert "No findings match." in combined  # filters narrow each other
+
+
+def test_findings_json(stub_registry):
+    run_id = json.loads(scan_stub("--format", "json").output)["run_id"]
+    data = json.loads(runner.invoke(app, ["findings", "-f", "json", "-t", "stg_imp"]).output)
+    assert data["run_id"] == run_id
+    assert data["query"]["tables"] == ["stg_imp"]
+    (table,) = data["tables"]
+    groups = {g["check_id"]: g for g in table["groups"]}
+    assert groups["column.description.missing"]["columns"] == ["c1", "f2"]
+    assert groups["column.description.missing"]["count"] == 2
+    assert groups["table.description.missing"]["fix_hint"].startswith(
+        "COMMENT ON TABLE public.stg_imp"
+    )
+
+
+def test_findings_rejects_an_unknown_check(stub_registry):
+    scan_stub()
+    result = runner.invoke(app, ["findings", "--check", "no.such.check"])
+    assert result.exit_code == 2
+    assert "Unknown check: no.such.check" in result.output
+    assert "column.pii.unclassified" in result.output  # lists the real ones
+
+
+def test_findings_without_saved_runs(stub_registry):
+    result = runner.invoke(app, ["findings"])
+    assert result.exit_code == 2
+    assert "No saved runs yet" in result.output
+
+
+def test_findings_unknown_run(stub_registry):
+    scan_stub()
+    result = runner.invoke(app, ["findings", "--run", "nope"])
+    assert result.exit_code == 2
+    assert "No saved run matches 'nope'" in result.output

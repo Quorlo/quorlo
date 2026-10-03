@@ -284,6 +284,9 @@ class SqliteRunStore:
     def get(self, run_id: str) -> ScanRun:
         return self._load(self._resolve(run_id))
 
+    def summary(self, run_id: str) -> RunSummary:
+        return self._summary(self._resolve(run_id))
+
     def report(self, run_id: str) -> ScanReport:
         """A finished run's scores alone: cheap, since findings are not loaded."""
         return ScanReport.model_validate_json(zlib.decompress(self._resolve(run_id)["report"]))
