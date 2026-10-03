@@ -98,8 +98,11 @@ def test_connectors_lists_capabilities_and_errors(stub_registry):
 def test_scan_table_output(stub_registry):
     result = runner.invoke(app, ["scan", "-c", "stub", "--dsn", "stub://", "--details"])
     assert result.exit_code == 0, result.output
-    assert "db.public.customers" in result.output
-    assert "db.public.stg_imp" in result.output
+    summary = result.output.split("Overall", 1)[0]
+    assert "public.customers" in summary
+    assert "public.stg_imp" in summary
+    assert "db.public" not in summary  # the title names the database
+    assert "…" not in summary
     assert "Overall" in result.output
     assert "column.name.cryptic" in result.output
 

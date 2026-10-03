@@ -22,16 +22,18 @@ def render_report(report: ScanReport, console: Console, details: bool = False) -
     dims = [d for d in Dimension if d in report.dimensions]
 
     summary = RichTable(title=f"AI readiness: {report.database} ({report.platform})")
-    summary.add_column("Table")
+    # Fold rather than truncate: a name cut to "quorlo_demo.retai…" is useless.
+    summary.add_column("Table", overflow="fold")
     summary.add_column("Kind", style="dim")
     summary.add_column("Score", justify="right")
     for dim in dims:
         summary.add_column(dim.value.title(), justify="right")
     summary.add_column("Findings", justify="right")
 
+    prefix = f"{report.database}."
     for t in sorted(report.tables, key=lambda t: (t.score is None, t.score or 0.0)):
         summary.add_row(
-            t.table,
+            t.table.removeprefix(prefix),
             t.kind.value,
             _score_text(t.score),
             *(_score_text(t.dimensions.get(d)) for d in dims),
@@ -58,7 +60,6 @@ def render_report(report: ScanReport, console: Console, details: bool = False) -
         findings.add_column("Check", style="dim", overflow="fold")
         findings.add_column("Severity")
         findings.add_column("Problem")
-        prefix = f"{report.database}."
         for f in report.findings:
             target = f.target.removeprefix(prefix)
             findings.add_row(target, f.check_id, f.severity.value, f.message)
