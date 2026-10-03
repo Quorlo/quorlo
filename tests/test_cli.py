@@ -9,18 +9,18 @@ import pytest
 from typer.testing import CliRunner
 
 from factories import make_column, make_table
-from quorlo import registry
 from quorlo.cli import app
-from quorlo.connector import (
+from quorlo.connectors import (
     ConnectionConfig,
     ConnectorCapabilities,
     ConnectorError,
     DatabaseInfo,
     FetchStats,
+    registry,
 )
+from quorlo.connectors.registry import ConnectorInfo
 from quorlo.models import Database, Schema
 from quorlo.readiness import evaluate
-from quorlo.registry import ConnectorInfo
 from quorlo.render import _name_prefix
 
 runner = CliRunner()

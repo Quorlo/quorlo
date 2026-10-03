@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from quorlo.connector import Connector
+from quorlo.connectors import Connector
 from quorlo.history import RunHeader, RunTarget
 from quorlo.models import Schema
 from quorlo.readiness import Finding, FindingList, FindingSink, ReadinessEngine, ScanReport

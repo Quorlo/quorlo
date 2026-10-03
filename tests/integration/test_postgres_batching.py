@@ -9,7 +9,7 @@ import pytest
 from psycopg import sql
 from pydantic import SecretStr
 
-from quorlo.connector import ConnectionConfig
+from quorlo.connectors import ConnectionConfig
 from quorlo.connectors.postgres import QUERIES_PER_SCHEMA, PostgresConnector
 
 DSN = os.environ.get("QUORLO_TEST_DSN")

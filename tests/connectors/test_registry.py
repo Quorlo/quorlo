@@ -7,14 +7,14 @@ from typing import ClassVar
 import pytest
 from pydantic import SecretStr
 
-from quorlo import registry
-from quorlo.connector import (
+from quorlo.connectors import (
     ConnectionConfig,
     Connector,
     ConnectorCapabilities,
     DatabaseInfo,
     FetchStats,
     read_database,
+    registry,
 )
 from quorlo.models import Schema
 

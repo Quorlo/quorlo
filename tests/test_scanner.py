@@ -7,7 +7,7 @@ import pytest
 from pydantic import SecretStr
 
 from factories import make_column, make_table
-from quorlo.connector import (
+from quorlo.connectors import (
     ConnectionConfig,
     ConnectorCapabilities,
     ConnectorError,
