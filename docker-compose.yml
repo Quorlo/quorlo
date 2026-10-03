@@ -1,0 +1,27 @@
+# Demo Postgres with a deliberately messy retail schema (demo/seed.sql).
+#
+#   docker compose up -d
+#   uv run quorlo scan --dsn postgresql://quorlo:quorlo@localhost:55432/quorlo_demo
+#
+# Published on 55432, not 5432, so it never collides with a local Postgres.
+# The seed only runs on first start; `docker compose down -v` resets it.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: quorlo
+      POSTGRES_PASSWORD: quorlo
+      POSTGRES_DB: quorlo_demo
+    ports:
+      - "55432:5432"
+    volumes:
+      - ./demo/seed.sql:/docker-entrypoint-initdb.d/01-seed.sql:ro
+      - quorlo-demo-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quorlo -d quorlo_demo"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  quorlo-demo-data:
