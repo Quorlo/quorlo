@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 import quorlo
+from quorlo.connector import DatabaseInfo
 from quorlo.models import Database
 from quorlo.readiness import Dimension, Finding, ScanReport
 
@@ -31,31 +32,64 @@ class RunTarget(_Frozen):
     def label(self) -> str:
         return self.location or f"{self.platform}:{self.database}"
 
+    @classmethod
+    def of(cls, source: Database | DatabaseInfo) -> RunTarget:
+        return cls(platform=source.platform, location=source.location, database=source.name)
+
 
 def new_run_id(started_at: datetime) -> str:
     """Sortable and readable: '20261003T171844Z-3f9a1c'."""
     return f"{started_at.astimezone(UTC):%Y%m%dT%H%M%SZ}-{secrets.token_hex(3)}"
 
 
-class ScanRun(_Frozen):
+class RunHeader(_Frozen):
+    """What is known about a run when it starts: enough to open it in the store."""
+
     id: str
     started_at: datetime
-    finished_at: datetime
     quorlo_version: str
     target: RunTarget
     schemas: tuple[str, ...] | None = Field(
         default=None, description="Schemas the scan was limited to; None means all of them."
     )
-    report: ScanReport
-    findings: tuple[Finding, ...] = ()
-    snapshot: Database = Field(description="The scanned metadata. Metadata only, never data.")
 
-    @field_validator("started_at", "finished_at")
+    @field_validator("started_at")
     @classmethod
     def _aware(cls, value: datetime) -> datetime:
-        if value.tzinfo is None:
-            raise ValueError("timestamps must be timezone-aware")
-        return value
+        return _require_aware(value)
+
+    @classmethod
+    def start(
+        cls,
+        target: RunTarget,
+        schemas: Sequence[str] | None = None,
+        started_at: datetime | None = None,
+    ) -> RunHeader:
+        started_at = started_at or datetime.now(UTC)
+        return cls(
+            id=new_run_id(started_at),
+            started_at=started_at,
+            quorlo_version=quorlo.__version__,
+            target=target,
+            schemas=tuple(sorted(schemas)) if schemas else None,
+        )
+
+
+class ScanRun(RunHeader):
+    """A finished run: its header plus what the scan found.
+
+    The scanned metadata is not held here. The store keeps it per schema and streams it
+    back on request, so loading a run never pulls a whole estate into memory.
+    """
+
+    finished_at: datetime
+    report: ScanReport
+    findings: tuple[Finding, ...] = ()
+
+    @field_validator("finished_at")
+    @classmethod
+    def _aware_finish(cls, value: datetime) -> datetime:
+        return _require_aware(value)
 
     @property
     def checks(self) -> dict[str, int]:
@@ -71,19 +105,20 @@ class ScanRun(_Frozen):
         finished_at: datetime | None = None,
         schemas: Sequence[str] | None = None,
     ) -> ScanRun:
+        """A finished run of a database held in memory."""
+        header = RunHeader.start(RunTarget.of(database), schemas, started_at)
         return cls(
-            id=new_run_id(started_at),
-            started_at=started_at,
+            **header.model_dump(),
             finished_at=finished_at or datetime.now(UTC),
-            quorlo_version=quorlo.__version__,
-            target=RunTarget(
-                platform=database.platform, location=database.location, database=database.name
-            ),
-            schemas=tuple(sorted(schemas)) if schemas else None,
             report=report,
             findings=tuple(findings),
-            snapshot=database,
         )
+
+
+def _require_aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        raise ValueError("timestamps must be timezone-aware")
+    return value
 
 
 class ScoreChange(_Frozen):

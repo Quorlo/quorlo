@@ -4,13 +4,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from factories import make_column, make_table
-from quorlo.history import ScanRun, diff_runs
+from quorlo.history import RunHeader, ScanRun, diff_runs
 from quorlo.models import Database, Schema
 from quorlo.readiness import evaluate
 from quorlo.store import (
     RunNotFoundError,
     RunStore,
+    SinceLastRun,
     SqliteRunStore,
+    SqliteRunWriter,
     StoreError,
     default_store_path,
 )
@@ -59,7 +61,7 @@ def test_satisfies_protocol(store):
 
 def test_creates_parent_directory_and_schema(tmp_path, store):
     assert (tmp_path / "nested" / "quorlo.db").exists()
-    assert store.schema_version == 2
+    assert store.schema_version == 3
 
 
 def test_save_and_get_round_trip(store):
@@ -117,7 +119,8 @@ def test_latest_matches_target_and_schemas(store):
     for r in (all_schemas, only_public, newer):
         store.save(r)
     assert store.latest(newer.target).id == newer.id
-    assert store.latest(newer.target, before=newer.started_at).id == all_schemas.id
+    assert store.previous(newer).id == all_schemas.id
+    assert store.previous(all_schemas) is None
     assert store.latest(newer.target, schemas=("public",)).id == only_public.id
     assert store.latest(run(database(location="postgres://x:1/db")).target) is None
 
@@ -170,7 +173,7 @@ def test_reopening_does_not_rerun_migrations(tmp_path):
     with SqliteRunStore(path) as s:
         s.save(r)
     with SqliteRunStore(path) as s:
-        assert s.schema_version == 2
+        assert s.schema_version == 3
         assert s.get(r.id) == r
 
 
@@ -188,7 +191,7 @@ def test_upgrades_a_version_1_store_without_losing_findings(tmp_path):
     import json
     import zlib
 
-    from quorlo.store import _SCHEMA_V1, SqlMigration
+    from quorlo.store.migrations import _SCHEMA_V1, SqlMigration
 
     r = run()
     path = tmp_path / "v1.db"
@@ -206,7 +209,7 @@ def test_upgrades_a_version_1_store_without_losing_findings(tmp_path):
         (r.id, r.started_at.isoformat(), r.finished_at.isoformat(), "0.0.1", "postgres",
          r.target.location, "db", "postgres\x1fpostgres://h:5432/db\x1fdb", None, r.report.score,
          1, len(r.findings), zlib.compress(json.dumps(v1_report).encode()),
-         zlib.compress(r.snapshot.model_dump_json().encode())),
+         zlib.compress(database().model_dump_json().encode())),
     )  # fmt: skip
     conn.executemany(
         "INSERT INTO findings VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -218,14 +221,87 @@ def test_upgrades_a_version_1_store_without_losing_findings(tmp_path):
     conn.close()
 
     with SqliteRunStore(path) as store:
-        assert store.schema_version == 2
+        assert store.schema_version == 3
         upgraded = store.get(r.id)
+        snapshot = list(store.snapshot(r.id))
     assert upgraded.findings == r.findings  # remedy, scope and key recovered from the blob
     assert upgraded.report == r.report  # finding_count filled in, findings moved out
+    assert snapshot == list(database().schemas)  # v3: one snapshot row per schema
 
 
 def test_sql_migration_splits_on_real_statement_ends_only():
-    from quorlo.store import SqlMigration
+    from quorlo.store.migrations import SqlMigration
 
     script = "CREATE TABLE a (x TEXT); -- a comment; with a semicolon\nCREATE TABLE b (y TEXT);\n"
     assert len(list(SqlMigration(script).statements())) == 2
+
+
+# --- incremental writing (schema v3) --------------------------------------------------
+
+
+def test_run_is_invisible_until_finished(store):
+    r = run()
+    writer = store.open_run(RunHeader.start(r.target, started_at=r.started_at))
+    writer.add(r.findings)
+    assert store.list() == []
+    assert store.previous(run(at=T0 + timedelta(days=1))) is None
+    with pytest.raises(RunNotFoundError):
+        store.get(writer._run_id)
+    writer.finish(r.report, r.finished_at)
+    assert len(store.list()) == 1
+
+
+def test_writer_flushes_findings_in_batches(store, monkeypatch):
+    monkeypatch.setattr(SqliteRunWriter, "batch_size", 2)
+    r = run()
+    writer = store.open_run(RunHeader.start(r.target, started_at=r.started_at))
+    writer.add(r.findings[:1])
+    assert _rows(store, "findings") == 0  # below the batch size: still buffered
+    writer.add(r.findings[1:])
+    assert _rows(store, "findings") == len(r.findings)
+    writer.finish(r.report, r.finished_at)
+    assert store.get(writer._run_id).findings == r.findings
+
+
+def test_snapshot_streams_schemas_in_scan_order(store):
+    r = run()
+    schemas = [Schema(name=n, tables=()) for n in ("zeta", "alpha", "mid")]
+    store.save(r, schemas)
+    assert [s.name for s in store.snapshot(r.id)] == ["zeta", "alpha", "mid"]
+
+
+def test_finding_changes_are_counted_in_sql(store):
+    base = run()
+    head = run(database(description="One row per order."), at=T0 + timedelta(days=1))
+    store.save(base)
+    store.save(head)
+    changes = store.finding_changes(base.id, head.id)
+    diff = diff_runs(base, head)
+    assert (changes.new, changes.resolved, changes.unchanged) == (
+        len(diff.new_findings),
+        len(diff.resolved_findings),
+        diff.unchanged_findings,
+    )
+    assert changes.resolved == 1
+
+
+def test_report_loads_scores_without_findings(store):
+    r = run()
+    store.save(r)
+    assert store.report(r.id) == r.report
+
+
+def test_since_last_run(store):
+    base = run()
+    head = run(database(description="One row per order."), at=T0 + timedelta(days=1))
+    store.save(base)
+    store.save(head)
+    since = SinceLastRun.between(store, store.previous(head), head.id, head.report)
+    assert since.previous.id == base.id
+    assert (since.score_before, since.score_after) == (base.report.score, head.report.score)
+    assert since.findings.resolved == 1
+    assert not since.rules_changed
+
+
+def _rows(store, table):
+    return store._conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]

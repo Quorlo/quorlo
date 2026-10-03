@@ -55,7 +55,7 @@ def test_record_captures_target_and_checks():
     )
     assert r.schemas == ("public", "sales")
     assert r.checks == {"table.description.missing": 1, "column.description.missing": 1}
-    assert r.snapshot.schemas[0].tables[0].name == "orders"
+    assert not hasattr(r, "snapshot")  # the store keeps metadata per schema, not the run
 
 
 def test_timestamps_must_be_aware():

@@ -15,7 +15,7 @@ from rich.text import Text
 from quorlo.history import RunDiff, ScanRun, ScoreChange
 from quorlo.models import TableKind
 from quorlo.readiness import Dimension, Finding, ScanReport, TableReadiness
-from quorlo.store import RunSummary
+from quorlo.store import RunSummary, SinceLastRun
 
 
 def _score_text(score: float | None) -> Text:
@@ -164,12 +164,12 @@ def _delta_text(change: ScoreChange) -> Text:
     return text
 
 
-def change_line(diff: RunDiff, previous: ScanRun, now: datetime) -> Text:
+def change_line(since: SinceLastRun, now: datetime) -> Text:
     """'Since last run (2 days ago): 44% → 51% (+7 pts), 6 resolved, 1 new.'"""
-    line = Text(f"Since last run ({_ago(previous.started_at, now)}): ")
-    line.append_text(_delta_text(diff.score))
-    line.append(f", {len(diff.resolved_findings)} resolved, {len(diff.new_findings)} new")
-    if diff.warnings:
+    line = Text(f"Since last run ({_ago(since.previous.started_at, now)}): ")
+    line.append_text(_delta_text(ScoreChange(before=since.score_before, after=since.score_after)))
+    line.append(f", {since.findings.resolved} resolved, {since.findings.new} new")
+    if since.rules_changed:
         line.append(" (check rules changed; see quorlo diff)", style="yellow")
     return line
 

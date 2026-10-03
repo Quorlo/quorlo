@@ -28,7 +28,13 @@ from quorlo.render import (
     render_runs,
     report_json,
 )
-from quorlo.store import RunNotFoundError, SqliteRunStore, StoreError, default_store_path
+from quorlo.store import (
+    RunNotFoundError,
+    SinceLastRun,
+    SqliteRunStore,
+    StoreError,
+    default_store_path,
+)
 
 app = typer.Typer(
     help="Make your data AI-ready: scan platforms and score how ready each table is.",
@@ -146,17 +152,18 @@ def scan(
         run = ScanRun.record(
             database, report, evaluation.findings, started_at=started_at, schemas=schema
         )
-        previous = None
+        since = None
         if store is not None:
-            previous = store.latest(run.target, run.schemas, before=run.started_at)
-            store.save(run)
+            store.save(run, database.schemas)
+            if previous := store.previous(run):
+                since = SinceLastRun.between(store, previous, run.id, report)
 
     if output is OutputFormat.JSON:
         typer.echo(report_json(report, run.findings, run_id=run.id if save else None))
         return
     ReportView(report, run.findings).render(console, details=details)
-    if previous is not None:
-        console.print(change_line(diff_runs(previous, run), previous, datetime.now(UTC)))
+    if since is not None:
+        console.print(change_line(since, datetime.now(UTC)))
     if save:
         console.print(f"[dim]Saved as run {run.id}.[/dim]")
 
@@ -251,10 +258,10 @@ def _pick_runs(
     if not newest:
         raise RunNotFoundError("No saved runs yet. Run quorlo scan first.")
     head = store.get(newest[0].id)
-    base = store.latest(head.target, head.schemas, before=head.started_at)
-    if base is None:
+    previous = store.previous(head)
+    if previous is None:
         raise RunNotFoundError(
             f"Only one run of {head.target.label} is saved; "
             "scan again to have something to compare."
         )
-    return base, head
+    return store.get(previous.id), head
