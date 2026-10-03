@@ -46,18 +46,19 @@ def runs(
 @runs_app.command("show")
 def runs_show(
     run_id: Annotated[str, typer.Argument(help="Run id, or a unique prefix of one.")],
-    details: Annotated[bool, typer.Option(help="List every finding.")] = False,
     output: FormatOption = OutputFormat.TABLE,
     store_path: StoreOption = None,
 ) -> None:
-    """Show the report of a saved run."""
+    """Show the scores of a saved run. For its findings, use quorlo findings --run."""
     with open_store(store_path) as store:
         try:
-            run = store.get(run_id)
+            run = store.summary(run_id)
+            report = store.report(run.id)
         except RunNotFoundError as exc:
             fail(str(exc))
-    if output is OutputFormat.JSON:
-        typer.echo(report_json(run.report, run.findings, run_id=run.id))
-        return
+        if output is OutputFormat.JSON:
+            typer.echo(report_json(report, store.findings(run.id), run_id=run.id))
+            return
     console.print(f"[dim]Run {run.id}, {run.started_at:%Y-%m-%d %H:%M %Z}[/dim]")
-    ReportView(run.report, run.findings).render(console, details=details)
+    ReportView(report).render(console)
+    console.print(f"[dim]Findings: quorlo findings --run {run.id}[/dim]")

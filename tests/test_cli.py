@@ -117,7 +117,7 @@ def test_connectors_lists_capabilities_and_errors(stub_registry):
 
 
 def test_scan_table_output(stub_registry):
-    result = runner.invoke(app, ["scan", "-c", "stub", "--dsn", "stub://", "--details"])
+    result = runner.invoke(app, ["scan", "-c", "stub", "--dsn", "stub://"])
     assert result.exit_code == 0, result.output
     title, rows = result.output.split("\n", 1)
     summary = rows.split("Overall", 1)[0]
@@ -128,7 +128,7 @@ def test_scan_table_output(stub_registry):
     assert "public." not in summary
     assert "…" not in result.output
     assert "Overall" in result.output
-    assert "column.name.cryptic" in result.output
+    assert "column.name.cryptic" not in result.output  # findings live in quorlo findings
 
 
 def test_scan_json_output(stub_registry):
@@ -168,13 +168,31 @@ def test_scan_connector_error(stub_registry):
     assert "could not connect" in result.output
 
 
-def test_scan_details_shows_full_targets_without_shared_prefix(stub_registry):
-    result = runner.invoke(app, ["scan", "-c", "stub", "--dsn", "stub://", "--details"])
-    assert result.exit_code == 0, result.output
-    findings = result.output.split("Findings in db.public", 1)[1]
-    assert "stg_imp.c1" in findings
-    assert "public." not in findings
-    assert "…" not in findings
+def test_scan_ends_with_next_steps(stub_registry):
+    out = runner.invoke(app, ["scan", "-c", "stub", "--dsn", "stub://"]).output
+    lines = out.splitlines()
+    assert lines[-2].startswith("Next: quorlo findings ")
+    assert "quorlo findings --table stg_imp " in lines[-1]  # the worst table, by bare name
+    assert "start with the lowest-scoring table" in lines[-1]
+
+
+def test_scan_hint_points_at_a_custom_store(stub_registry, tmp_path):
+    custom = tmp_path / "elsewhere.db"
+    out = runner.invoke(app, ["scan", "-c", "stub", "--dsn", "x", "--store", str(custom)]).output
+    assert f"quorlo findings --store {custom}" in out
+    assert runner.invoke(app, ["findings", "--store", str(custom)]).exit_code == 0
+
+
+def test_unsaved_scan_says_findings_were_not_saved(stub_registry):
+    out = runner.invoke(app, ["scan", "-c", "stub", "--dsn", "x", "--no-save"]).output
+    assert "Findings were not saved (--no-save)" in out
+    assert "Next:" not in out
+
+
+def test_details_flag_is_gone(stub_registry):
+    result = runner.invoke(app, ["scan", "-c", "stub", "--dsn", "x", "--details"])
+    assert result.exit_code == 2
+    assert "No such option: --details" in result.output
 
 
 def test_scan_keeps_schema_in_names_when_several_schemas():
@@ -252,6 +270,7 @@ def test_runs_lists_newest_first_and_show_reprints(stub_registry, monkeypatch):
     assert shown.exit_code == 0, shown.output
     assert f"Run {first}" in shown.output
     assert "stg_imp" in shown.output
+    assert f"quorlo findings --run {first}" in shown.output
     as_json = json.loads(runner.invoke(app, ["runs", "show", first, "-f", "json"]).output)
     assert as_json["run_id"] == first
 

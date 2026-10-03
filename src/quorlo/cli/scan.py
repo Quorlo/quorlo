@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import nullcontext
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -19,6 +21,7 @@ from quorlo.cli.common import (
 )
 from quorlo.connectors import ConnectionConfig, ConnectorError, registry
 from quorlo.output import (
+    NextSteps,
     ReportView,
     change_line,
     report_json,
@@ -44,7 +47,6 @@ def scan(
         list[str] | None,
         typer.Option("--schema", "-s", help="Schema to scan. Repeat for several. Default: all."),
     ] = None,
-    details: Annotated[bool, typer.Option(help="List every finding.")] = False,
     output: FormatOption = OutputFormat.TABLE,
     save: Annotated[
         bool, typer.Option("--save/--no-save", help="Save this run to the run history.")
@@ -61,20 +63,31 @@ def scan(
                 outcome = scanner.scan(conn, schema or None)
         except ConnectorError as exc:
             fail(str(exc))
-        _show_scan(outcome, scanner, output, details)
+        _show_scan(outcome, scanner, output, _store_flag(store_path))
 
 
-def _show_scan(outcome: ScanOutcome, scanner: Scanner, output: OutputFormat, details: bool) -> None:
+def _store_flag(store_path: Path | None) -> str:
+    """The --store value, unless QUORLO_STORE already points there (then hints need none)."""
+    if store_path is None or os.environ.get("QUORLO_STORE") == str(store_path):
+        return ""
+    return str(store_path)
+
+
+def _show_scan(
+    outcome: ScanOutcome, scanner: Scanner, output: OutputFormat, store_flag: str
+) -> None:
     run_id = outcome.header.id if outcome.saved else None
     if output is OutputFormat.JSON:
         findings = scanner.findings(outcome)
         typer.echo(report_json(outcome.report, findings, run_id=run_id, stats=outcome.stats))
         return
-    findings = scanner.findings(outcome) if details else ()
-    ReportView(outcome.report, findings).render(console, details=details)
+    ReportView(outcome.report).render(console)
     if outcome.since_last_run is not None:
         console.print(change_line(outcome.since_last_run, datetime.now(UTC)))
     for line in stats_lines(outcome.stats):
         console.print(line)
     if run_id:
         console.print(f"[dim]Saved as run {run_id}.[/dim]")
+    for line in NextSteps(outcome.report, outcome.saved, store_flag).lines():
+        # Never break a command across lines: it has to survive copy and paste.
+        console.print(line, soft_wrap=True)

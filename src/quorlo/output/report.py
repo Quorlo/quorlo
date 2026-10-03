@@ -33,23 +33,20 @@ def name_prefix(report: ScanReport) -> str:
 
 
 class ReportView:
-    """A scan report in the terminal: per-table summary, overall scores, optional findings."""
+    """A scan report in the terminal: per-table summary and overall scores.
 
-    def __init__(self, report: ScanReport, findings: Iterable[Finding] = ()) -> None:
+    Findings are not listed here; `quorlo findings` (FindingsView) is the one place for them.
+    """
+
+    def __init__(self, report: ScanReport) -> None:
         self._report = report
-        self._findings = findings
         self._prefix = name_prefix(report)
         self._dimensions = [d for d in Dimension if d in report.dimensions]
 
-    def render(self, console: Console, details: bool = False) -> None:
+    def render(self, console: Console) -> None:
         console.print(self._summary())
         for line in self._overall():
             console.print(line)
-        if details:
-            findings = self._findings_table()
-            if findings.row_count:
-                console.print()
-                console.print(findings)
 
     @property
     def _scope(self) -> str:
@@ -92,19 +89,6 @@ class ReportView:
         unscored = [d.value for d in Dimension if d not in report.dimensions]
         if unscored:
             yield f"  [dim]Not scored yet (no checks): {', '.join(unscored)}[/dim]"
-
-    def _findings_table(self) -> RichTable:
-        table = RichTable(title=f"Findings in {self._scope}")
-        # Fold rather than truncate: a target cut to "retail_…" is useless.
-        table.add_column("Target", overflow="fold")
-        table.add_column("Check", style="dim", overflow="fold")
-        table.add_column("Severity")
-        table.add_column("Problem")
-        for f in self._findings:
-            table.add_row(
-                f.target.removeprefix(self._prefix), f.check_id, f.severity.value, f.message
-            )
-        return table
 
 
 def report_json(
