@@ -49,7 +49,7 @@ marked as PII. (column.pii.unclassified)
   retail_raw.ord_ln: Table has no description. (table.description.missing)
 ```
 
-List saved runs with `quorlo runs`, and reprint one with `quorlo runs show RUN`. All commands are in the [CLI reference](../reference/cli.md#quorlo-runs).
+List saved runs with `quorlo runs`, reprint one's scores with `quorlo runs show RUN`, and see its findings with `quorlo findings --run RUN`. All commands are in the [CLI reference](../reference/cli.md#quorlo-runs).
 
 ## What gets compared with what
 

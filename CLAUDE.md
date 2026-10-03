@@ -75,10 +75,13 @@ src/quorlo/
                      Assessment, FindingSink), checks/ (one module per question), names
   history/           runs over time, re-exported from quorlo.history:
     models.py        RunHeader, ScanRun, diff_runs (pure, no I/O)
+    findings.py      FindingQuery, FindingGrouper: findings per check per table (pure)
     store/           RunStore protocol (base), schema history (migrations), SQLite backend
   scanner.py         Scanner: fetch -> check -> score -> save, streamed and timed
   stats.py           Phase, PhaseClock, ScanStats
-  cli.py, render.py  thin Typer CLI; ReportView, RunsView and other output
+  cli/               thin Typer commands, one module per group; app.py registers them all
+  output/            views (ReportView, FindingsView, RunsView, DiffView, NextSteps) and
+                     JSON; views render, they never compute
 demo/                messy demo schema for the docker-compose Postgres
 tests/               mirrors src/ (tests/connectors, tests/history); tests/integration/
                      needs a running database
@@ -99,6 +102,9 @@ tests/               mirrors src/ (tests/connectors, tests/history); tests/integ
   schema (Postgres: 3, plus 1 for the schema list) inside one read-only REPEATABLE READ
   snapshot. The `Scanner` passes each schema to the engine and the run writer, then
   drops it. Never add a per-table query; `test_postgres_batching.py` holds the count.
+- **Every check declares a `summary` and a `fix_hint`** ({table}/{column} placeholders);
+  `BaseCheck` rejects a check without them at import. `quorlo findings` is the one place
+  findings are listed; `scan` and `runs show` show scores only.
 - **Checks only report what is wrong.** A `TableCheck.run(table)` judges one table. An
   `EstateCheck` judges tables against the estate: `start()` returns a per-scan run that
   `observe()`s each table (keep a small signature, not the table) and reports once at the

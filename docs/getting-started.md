@@ -43,6 +43,8 @@ Overall: 44% across 8 tables, 77 findings
 Scanned 2 schemas, 8 tables, 39 columns in 0.03s
   fetch 0.02s (7 queries) · checks 0.00s · scoring 0.00s · persistence 0.00s
 Saved as run 20261003T174608Z-b2a84e.
+Next: quorlo findings                     what to fix, worst table first
+      quorlo findings --table stg_imp_01  start with the lowest-scoring table
 ```
 
 Each problem shows up under the question it gets in the way of. `stg_imp_01` has columns named `c1`, `c2`, `f1` and `f2` and no documentation, so it scores 0% on *Meaning*. `cust_mstr` holds names, emails and phone numbers nobody marked as personal data, so it fails *Governed*. `revenue_daily` and `daily_revenue_v2` look like the same data and neither says which to use, so both fail *Certified*. Almost nothing records when it was last loaded, so *Trust* is low everywhere. `dim_product` gets everything right and scores 100%.
@@ -57,13 +59,34 @@ Since last run (2 days ago): 44% → 48% (+4 pts), 3 resolved, 1 new
 
 `quorlo diff` shows exactly which findings were resolved and which are new. See [run history](guides/run-history.md).
 
-## See every finding
+## See what to fix
 
 ```bash
-uv run quorlo scan --details
+uv run quorlo findings --table cust_mstr
 ```
 
-Each finding names the table or column, the check that raised it, its severity and the problem. All checks are listed in the [checks reference](reference/checks.md).
+```
+Findings in run 20261003T192854Z-08798e · postgres://localhost:15432/quorlo_demo  (table: cust_mstr)
+
+retail_raw.cust_mstr  (28%, 23 findings)
+  What is it?
+    table.description.missing   Table has no description.
+                                fix: COMMENT ON TABLE retail_raw.cust_mstr IS '<what one row represents>';
+    column.description.missing  nm, eml, phn, addr1, pc, cntry_cd, st, crt_dt · no column description
+                                fix: COMMENT ON COLUMN retail_raw.cust_mstr.<column> IS '<meaning, units,
+                                codes>';
+    column.name.cryptic         nm, eml, phn, addr1, pc, cntry_cd, st, crt_dt · cryptic column name
+                                fix: rename it, or explain the abbreviation in the column description
+  Can I trust it?
+    table.freshness.untracked   No column shows when rows were last loaded or updated.
+                                fix: ALTER TABLE retail_raw.cust_mstr ADD COLUMN updated_at timestamp;  --
+                                kept current by the load
+  Am I allowed to use it?
+    column.pii.unclassified     nm, eml, phn, addr1, pc · looks like personal data, not marked as PII
+                                fix: tag it as PII, or end its description with 'PII.'
+```
+
+Without `--table`, every table is listed, worst first. Each check gets one line listing the columns it applies to, and a `fix:` line you can adapt. Narrow the list with `--dimension governance` or `--check column.pii.unclassified`, or add `--format json` for scripts. All checks are explained in the [checks reference](reference/checks.md).
 
 ## Scan your own database
 
