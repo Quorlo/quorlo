@@ -39,3 +39,69 @@ def cryptic_reason(name: str) -> str | None:
         if not _VOWELS & set(token):
             return f"abbreviation '{token}'"
     return None
+
+
+# --- Personal data -------------------------------------------------------------------
+# Words that mean personal data wherever they appear.
+_PII_ALWAYS = {
+    "email": "email address",
+    "eml": "email address",
+    "phone": "phone number",
+    "phn": "phone number",
+    "mobile": "phone number",
+    "ssn": "national identifier",
+    "passport": "national identifier",
+    "dob": "date of birth",
+    "birth": "birth details",
+    "birthdate": "date of birth",
+    "birthday": "date of birth",
+    "surname": "person name",
+    "firstname": "person name",
+    "lastname": "person name",
+    "fullname": "person name",
+    "iban": "bank account",
+    "salary": "salary",
+    "gender": "sensitive attribute",
+    "ethnicity": "sensitive attribute",
+    "religion": "sensitive attribute",
+    "ip": "IP address",
+}
+# Words that mean personal data only in a table or column about people:
+# `customer.name` is personal, `product.name` is not.
+_PII_ABOUT_PEOPLE = {
+    "name": "person name",
+    "nm": "person name",
+    "address": "postal address",
+    "addr": "postal address",
+    "street": "postal address",
+    "postal": "postal address",
+    "postcode": "postal address",
+    "zip": "postal address",
+    "zipcode": "postal address",
+    "pc": "postal address",
+}
+_NAME_QUALIFIERS = {"first", "last", "middle", "given", "family", "full", "maiden"}
+_PEOPLE = {
+    "cust", "customer", "customers", "client", "clients", "user", "users", "person",
+    "people", "member", "members", "employee", "employees", "emp", "patient", "patients",
+    "contact", "contacts", "student", "students", "guest", "guests", "subscriber",
+}  # fmt: skip
+_IP_TYPES = {"inet", "cidr"}
+
+
+def pii_category(column: str, table: str, raw_type: str = "") -> str | None:
+    """The kind of personal data a column probably holds, judged only from names and type."""
+    if raw_type.lower() in _IP_TYPES:
+        return "IP address"
+    words = tokens(column)
+    about_people = bool(_PEOPLE & set(words) or _PEOPLE & set(tokens(table)))
+    for i, word in enumerate(words):
+        if word in _PII_ALWAYS:
+            return _PII_ALWAYS[word]
+        if word in ("name", "nm") and i and words[i - 1] in _NAME_QUALIFIERS:
+            return "person name"
+        if word in ("card", "cc") and words[i + 1 : i + 2] in (["number"], ["no"], ["num"]):
+            return "payment card number"
+        if about_people and word in _PII_ABOUT_PEOPLE:
+            return _PII_ABOUT_PEOPLE[word]
+    return None

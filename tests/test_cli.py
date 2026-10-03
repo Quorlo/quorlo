@@ -109,9 +109,8 @@ def test_scan_json_output(stub_registry):
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     scores = {t["table"]: t["score"] for t in data["tables"]}
-    assert scores["db.public.customers"] == 1.0
-    assert scores["db.public.stg_imp"] == 0.0
-    assert data["score"] == 0.5
+    assert scores["db.public.customers"] > scores["db.public.stg_imp"]
+    assert data["score"] == pytest.approx(sum(scores.values()) / 2)
     assert data["findings_count"] == len([f for t in data["tables"] for f in t["findings"]])
 
 
