@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from typing import ClassVar, Self
 
-from quorlo.connector import (
+from quorlo.connectors.base import (
     ConnectionConfig,
     ConnectorCapabilities,
     ConnectorError,

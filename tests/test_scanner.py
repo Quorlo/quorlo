@@ -7,18 +7,18 @@ import pytest
 from pydantic import SecretStr
 
 from factories import make_column, make_table
-from quorlo.connector import (
+from quorlo.connectors import (
     ConnectionConfig,
     ConnectorCapabilities,
     ConnectorError,
     DatabaseInfo,
     FetchStats,
 )
+from quorlo.history import SqliteRunStore
 from quorlo.models import Schema
 from quorlo.readiness import ReadinessEngine
 from quorlo.scanner import Scanner
 from quorlo.stats import Phase
-from quorlo.store import SqliteRunStore
 
 
 class StreamingConnector:

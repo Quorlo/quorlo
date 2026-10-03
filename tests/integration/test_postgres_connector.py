@@ -13,7 +13,7 @@ import psycopg
 import pytest
 from pydantic import SecretStr
 
-from quorlo.connector import ConnectionConfig, ConnectorError, read_database
+from quorlo.connectors import ConnectionConfig, ConnectorError, read_database
 from quorlo.connectors.postgres import PostgresConnector
 from quorlo.models import TableKind, TypeKind
 from quorlo.readiness import Dimension, evaluate

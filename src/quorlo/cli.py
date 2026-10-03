@@ -16,9 +16,15 @@ from rich.markup import escape
 from rich.table import Table as RichTable
 
 import quorlo
-from quorlo import registry
-from quorlo.connector import ConnectionConfig, ConnectorError
-from quorlo.history import ScanRun, diff_runs
+from quorlo.connectors import ConnectionConfig, ConnectorError, registry
+from quorlo.history import (
+    RunNotFoundError,
+    ScanRun,
+    SqliteRunStore,
+    StoreError,
+    default_store_path,
+    diff_runs,
+)
 from quorlo.readiness import ReadinessEngine
 from quorlo.render import (
     ReportView,
@@ -30,12 +36,6 @@ from quorlo.render import (
     stats_lines,
 )
 from quorlo.scanner import Scanner, ScanOutcome
-from quorlo.store import (
-    RunNotFoundError,
-    SqliteRunStore,
-    StoreError,
-    default_store_path,
-)
 
 app = typer.Typer(
     help="Make your data AI-ready: scan platforms and score how ready each table is.",

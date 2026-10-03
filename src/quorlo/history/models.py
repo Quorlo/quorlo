@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 import quorlo
-from quorlo.connector import DatabaseInfo
+from quorlo.connectors import DatabaseInfo
 from quorlo.models import Database
 from quorlo.readiness import Dimension, Finding, ScanReport
 from quorlo.stats import ScanStats

@@ -2,7 +2,7 @@
 
 `Connector` is a structural `Protocol`, not a base class: a connector package only has to
 have the right shape, so it never depends on core's class hierarchy. Connectors are
-discovered through the `quorlo.connectors` entry-point group (see `quorlo.registry`).
+discovered through the `quorlo.connectors` entry-point group (see `quorlo.connectors.registry`).
 """
 
 from __future__ import annotations

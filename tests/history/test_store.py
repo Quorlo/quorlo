@@ -4,18 +4,20 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from factories import make_column, make_table
-from quorlo.history import RunHeader, ScanRun, diff_runs
-from quorlo.models import Database, Schema
-from quorlo.readiness import evaluate
-from quorlo.store import (
+from quorlo.history import (
+    RunHeader,
     RunNotFoundError,
     RunStore,
+    ScanRun,
     SinceLastRun,
     SqliteRunStore,
     SqliteRunWriter,
     StoreError,
     default_store_path,
+    diff_runs,
 )
+from quorlo.models import Database, Schema
+from quorlo.readiness import evaluate
 
 
 def _evaluated(db, checks=None):
@@ -191,7 +193,7 @@ def test_upgrades_a_version_1_store_without_losing_findings(tmp_path):
     import json
     import zlib
 
-    from quorlo.store.migrations import _SCHEMA_V1, SqlMigration
+    from quorlo.history.store.migrations import _SCHEMA_V1, SqlMigration
 
     r = run()
     path = tmp_path / "v1.db"
@@ -230,7 +232,7 @@ def test_upgrades_a_version_1_store_without_losing_findings(tmp_path):
 
 
 def test_sql_migration_splits_on_real_statement_ends_only():
-    from quorlo.store.migrations import SqlMigration
+    from quorlo.history.store.migrations import SqlMigration
 
     script = "CREATE TABLE a (x TEXT); -- a comment; with a semicolon\nCREATE TABLE b (y TEXT);\n"
     assert len(list(SqlMigration(script).statements())) == 2

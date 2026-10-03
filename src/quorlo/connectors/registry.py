@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from importlib.metadata import EntryPoint, entry_points
 
-from quorlo.connector import Connector, ConnectorCapabilities, ConnectorError
+from quorlo.connectors.base import Connector, ConnectorCapabilities, ConnectorError
 
 ENTRY_POINT_GROUP = "quorlo.connectors"
 

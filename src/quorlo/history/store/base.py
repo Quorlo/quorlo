@@ -11,7 +11,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
 
-from quorlo.history import RunHeader, RunTarget, ScanRun
+from quorlo.history.models import RunHeader, RunTarget, ScanRun
 from quorlo.models import Schema
 from quorlo.readiness import Finding, ScanReport
 from quorlo.stats import ScanStats

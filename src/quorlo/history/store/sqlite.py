@@ -17,17 +17,17 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
-from quorlo.history import RunHeader, RunTarget, ScanRun
-from quorlo.models import Schema
-from quorlo.readiness import Finding, ScanReport
-from quorlo.stats import ScanStats
-from quorlo.store.base import (
+from quorlo.history.models import RunHeader, RunTarget, ScanRun
+from quorlo.history.store.base import (
     FindingChanges,
     RunNotFoundError,
     RunSummary,
     StoreError,
 )
-from quorlo.store.migrations import MIGRATIONS
+from quorlo.history.store.migrations import MIGRATIONS
+from quorlo.models import Schema
+from quorlo.readiness import Finding, ScanReport
+from quorlo.stats import ScanStats
 
 _RUNNING, _COMPLETE = "running", "complete"
 

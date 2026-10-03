@@ -11,7 +11,7 @@ import psycopg
 from psycopg import IsolationLevel
 from psycopg.rows import dict_row
 
-from quorlo.connector import ConnectionConfig, ConnectorError, FetchStats
+from quorlo.connectors.base import ConnectionConfig, ConnectorError, FetchStats
 from quorlo.connectors.postgres.catalog import Row
 
 

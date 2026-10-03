@@ -7,13 +7,13 @@ A connector reads metadata from one platform and translates it into Quorlo's pla
 
 ## The contract
 
-A connector is a class with the shape of the `quorlo.connector.Connector` protocol. It does **not** need to inherit from anything in Quorlo.
+A connector is a class with the shape of the `quorlo.connectors.Connector` protocol. It does **not** need to inherit from anything in Quorlo.
 
 ```python
 from collections.abc import Iterator, Sequence
 from typing import ClassVar, Self
 
-from quorlo.connector import (
+from quorlo.connectors import (
     ConnectionConfig,
     ConnectorCapabilities,
     ConnectorError,
@@ -66,7 +66,7 @@ And one more, for correctness: read **one consistent snapshot**. All of a scan's
 
 Count every query in `stats`. Quorlo prints the count after each scan, and your tests should hold it constant. The Postgres connector has an integration test that scans a schema with 1 table and one with 60, and asserts both cost the same number of queries.
 
-To collect everything at once, for example in a test, use `quorlo.connector.read_database(connector)`.
+To collect everything at once, for example in a test, use `quorlo.connectors.read_database(connector)`.
 
 ### `ConnectionConfig`
 
@@ -91,7 +91,7 @@ ConnectorCapabilities(reads_data=False, metadata_write_back=False, sample_values
 
 ### Errors
 
-Raise `quorlo.connector.ConnectorError` for failures the user can act on: can't connect, permission denied, unknown schema. Raise an unknown schema from `iter_schemas`, before yielding anything. The CLI prints the message and exits with code 2. Re-raise driver errors as `ConnectorError` with `from None`, so the traceback can't leak a DSN.
+Raise `quorlo.connectors.ConnectorError` for failures the user can act on: can't connect, permission denied, unknown schema. Raise an unknown schema from `iter_schemas`, before yielding anything. The CLI prints the message and exits with code 2. Re-raise driver errors as `ConnectorError` with `from None`, so the traceback can't leak a DSN.
 
 ## Building the models
 

@@ -3,15 +3,15 @@
 import pytest
 from pydantic import SecretStr
 
-from quorlo.connector import ConnectionConfig, Connector, ConnectorError
+from quorlo.connectors import ConnectionConfig, Connector, ConnectorError
 from quorlo.connectors.postgres import (
     PostgresConnector,
     SchemaAssembler,
     parse_type,
     postgres_location,
 )
+from quorlo.connectors.registry import load_connector
 from quorlo.models import TableKind, TypeKind
-from quorlo.registry import load_connector
 
 
 @pytest.mark.parametrize(
