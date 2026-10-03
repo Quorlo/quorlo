@@ -1,4 +1,12 @@
+import os
+
 import pytest
+
+# Plain, uncoloured output in every test, whatever the environment says. Must happen at
+# import, before quorlo's module-level consoles are created: they read these variables
+# once. CI sets FORCE_COLOR, which otherwise splits asserted text with ANSI codes.
+os.environ.pop("FORCE_COLOR", None)
+os.environ["NO_COLOR"] = "1"
 
 
 @pytest.fixture(autouse=True)
