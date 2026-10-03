@@ -2,7 +2,7 @@ import pytest
 
 from factories import make_column, make_table
 from quorlo.models import TableKind
-from quorlo.readiness import DEFAULT_CHECKS, Check, Dimension, ScanContext
+from quorlo.readiness import DEFAULT_CHECKS, Check, Dimension
 from quorlo.readiness.checks import (
     ColumnDescriptionMissing,
     ColumnNameCryptic,
@@ -10,8 +10,6 @@ from quorlo.readiness.checks import (
     TableDescriptionMissing,
 )
 from quorlo.readiness.names import cryptic_reason
-
-NO_CONTEXT = ScanContext(())
 
 
 def test_default_checks_satisfy_protocol_and_have_unique_ids():
@@ -25,29 +23,27 @@ def test_every_check_has_a_dimension():
 
 @pytest.mark.parametrize("description", [None, "", "   "])
 def test_table_description_missing(description):
-    findings = list(TableDescriptionMissing().run(make_table(description=description), NO_CONTEXT))
+    findings = list(TableDescriptionMissing().run(make_table(description=description)))
     assert len(findings) == 1
     assert findings[0].target == "db.public.orders"
 
 
 def test_table_description_present():
-    assert not list(
-        TableDescriptionMissing().run(make_table(description="One row per order."), NO_CONTEXT)
-    )
+    assert not list(TableDescriptionMissing().run(make_table(description="One row per order.")))
 
 
 def test_column_description_missing_reports_each_column():
     table = make_table(columns=[make_column("a"), make_column("b", "Documented"), make_column("c")])
-    findings = list(ColumnDescriptionMissing().run(table, NO_CONTEXT))
+    findings = list(ColumnDescriptionMissing().run(table))
     assert [f.column for f in findings] == ["a", "c"]
     assert findings[0].target == "db.public.orders.a"
 
 
 def test_primary_key_missing():
     check = PrimaryKeyMissing()
-    assert len(list(check.run(make_table(columns=[make_column("id")]), NO_CONTEXT))) == 1
+    assert len(list(check.run(make_table(columns=[make_column("id")])))) == 1
     keyed = make_table(columns=[make_column("id")], primary_key=("id",))
-    assert not list(check.run(keyed, NO_CONTEXT))
+    assert not list(check.run(keyed))
 
 
 def test_primary_key_check_skips_views():
@@ -87,6 +83,6 @@ def test_readable_names(name):
 
 def test_cryptic_check_reports_reason():
     table = make_table(columns=[make_column("cust_nm"), make_column("email")])
-    findings = list(ColumnNameCryptic().run(table, NO_CONTEXT))
+    findings = list(ColumnNameCryptic().run(table))
     assert [f.column for f in findings] == ["cust_nm"]
     assert "'nm'" in findings[0].message

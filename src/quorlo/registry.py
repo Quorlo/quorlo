@@ -18,7 +18,16 @@ from quorlo.connector import Connector, ConnectorCapabilities, ConnectorError
 
 ENTRY_POINT_GROUP = "quorlo.connectors"
 
-_REQUIRED_MEMBERS = ("name", "capabilities", "test_connection", "list_schemas", "scan", "close")
+_REQUIRED_MEMBERS = (
+    "name",
+    "capabilities",
+    "test_connection",
+    "describe",
+    "list_schemas",
+    "iter_schemas",
+    "stats",
+    "close",
+)
 
 
 class ConnectorNotFoundError(ConnectorError):

@@ -19,16 +19,23 @@ import quorlo
 from quorlo import registry
 from quorlo.connector import ConnectionConfig, ConnectorError
 from quorlo.history import ScanRun, diff_runs
-from quorlo.readiness import evaluate
+from quorlo.readiness import ReadinessEngine
 from quorlo.render import (
+    ReportView,
+    RunsView,
     change_line,
     diff_json,
     render_diff,
-    render_report,
-    render_runs,
     report_json,
+    stats_lines,
 )
-from quorlo.store import RunNotFoundError, SqliteRunStore, StoreError, default_store_path
+from quorlo.scanner import Scanner, ScanOutcome
+from quorlo.store import (
+    RunNotFoundError,
+    SqliteRunStore,
+    StoreError,
+    default_store_path,
+)
 
 app = typer.Typer(
     help="Make your data AI-ready: scan platforms and score how ready each table is.",
@@ -133,29 +140,30 @@ def scan(
     """Scan a platform read-only and score how AI-ready each table is."""
     # Open the run history first, so a bad --store fails before a long scan, not after.
     with _open_store(store_path) if save else nullcontext() as store:
-        started_at = datetime.now(UTC)
+        scanner = Scanner(ReadinessEngine(), store)
         try:
             connector_cls = registry.load_connector(connector)
             with connector_cls(ConnectionConfig(dsn=SecretStr(dsn))) as conn:
-                database = conn.scan(schema or None)
+                outcome = scanner.scan(conn, schema or None)
         except ConnectorError as exc:
             _fail(str(exc))
+        _show_scan(outcome, scanner, output, details)
 
-        report = evaluate(database)
-        run = ScanRun.record(database, report, started_at=started_at, schemas=schema)
-        previous = None
-        if store is not None:
-            previous = store.latest(run.target, run.schemas, before=run.started_at)
-            store.save(run)
 
+def _show_scan(outcome: ScanOutcome, scanner: Scanner, output: OutputFormat, details: bool) -> None:
+    run_id = outcome.header.id if outcome.saved else None
     if output is OutputFormat.JSON:
-        typer.echo(report_json(report, run_id=run.id if save else None))
+        findings = scanner.findings(outcome)
+        typer.echo(report_json(outcome.report, findings, run_id=run_id, stats=outcome.stats))
         return
-    render_report(report, console, details=details)
-    if previous is not None:
-        console.print(change_line(diff_runs(previous, run), previous, datetime.now(UTC)))
-    if save:
-        console.print(f"[dim]Saved as run {run.id}.[/dim]")
+    findings = scanner.findings(outcome) if details else ()
+    ReportView(outcome.report, findings).render(console, details=details)
+    if outcome.since_last_run is not None:
+        console.print(change_line(outcome.since_last_run, datetime.now(UTC)))
+    for line in stats_lines(outcome.stats):
+        console.print(line)
+    if run_id:
+        console.print(f"[dim]Saved as run {run_id}.[/dim]")
 
 
 runs_app = typer.Typer(
@@ -175,7 +183,7 @@ def runs(
     if ctx.invoked_subcommand is not None:
         return
     with _open_store(store_path) as store:
-        render_runs(store.list(limit=limit), console, datetime.now(UTC))
+        RunsView(store.list(limit=limit), datetime.now(UTC)).render(console)
 
 
 @runs_app.command("show")
@@ -192,10 +200,10 @@ def runs_show(
         except RunNotFoundError as exc:
             _fail(str(exc))
     if output is OutputFormat.JSON:
-        typer.echo(report_json(run.report, run_id=run.id))
+        typer.echo(report_json(run.report, run.findings, run_id=run.id))
         return
     console.print(f"[dim]Run {run.id}, {run.started_at:%Y-%m-%d %H:%M %Z}[/dim]")
-    render_report(run.report, console, details=details)
+    ReportView(run.report, run.findings).render(console, details=details)
 
 
 @app.command()
@@ -248,10 +256,10 @@ def _pick_runs(
     if not newest:
         raise RunNotFoundError("No saved runs yet. Run quorlo scan first.")
     head = store.get(newest[0].id)
-    base = store.latest(head.target, head.schemas, before=head.started_at)
-    if base is None:
+    previous = store.previous(head)
+    if previous is None:
         raise RunNotFoundError(
             f"Only one run of {head.target.label} is saved; "
             "scan again to have something to compare."
         )
-    return base, head
+    return store.get(previous.id), head

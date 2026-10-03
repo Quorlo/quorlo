@@ -13,7 +13,7 @@ import psycopg
 import pytest
 from pydantic import SecretStr
 
-from quorlo.connector import ConnectionConfig, ConnectorError
+from quorlo.connector import ConnectionConfig, ConnectorError, read_database
 from quorlo.connectors.postgres import PostgresConnector
 from quorlo.models import TableKind, TypeKind
 from quorlo.readiness import Dimension, evaluate
@@ -45,7 +45,7 @@ def connector():
 
 @pytest.fixture
 def demo(connector):
-    database = connector.scan(["retail_raw"])
+    database = read_database(connector, ["retail_raw"])
     (schema,) = database.schemas
     return {t.name: t for t in schema.tables}
 
@@ -70,7 +70,7 @@ def test_reads_comments(connector, demo):
     assert demo["dim_product"].column("list_price").description.startswith("Current list price")
     assert demo["cust_mstr"].description is None
     assert demo["cust_mstr"].column("nm").description is None
-    database = connector.scan(["retail_raw"])
+    database = read_database(connector, ["retail_raw"])
     assert database.schemas[0].description.startswith("Raw retail data")
 
 
@@ -101,18 +101,18 @@ def test_row_counts_come_from_statistics(demo):
 
 def test_unknown_schema_is_an_error(connector):
     with pytest.raises(ConnectorError, match="nope"):
-        connector.scan(["nope"])
+        read_database(connector, ["nope"])
 
 
 def test_connection_rejects_writes(connector):
-    conn = connector._connection()
+    conn = connector._runner._connection()
     with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
         conn.execute("INSERT INTO retail_raw.stg_imp_01 (c1) VALUES ('should fail')")
     conn.rollback()
 
 
 def test_demo_scores_show_a_range(connector):
-    report = evaluate(connector.scan(["retail_raw"]))
+    report = evaluate(read_database(connector, ["retail_raw"])).report
     tables = {t.table.rsplit(".", 1)[1]: t for t in report.tables}
     assert tables["dim_product"].score == 1.0
     assert tables["stg_imp_01"].dimensions[Dimension.MEANING] == 0.0
@@ -120,12 +120,14 @@ def test_demo_scores_show_a_range(connector):
 
 
 def test_demo_problems_land_in_the_right_dimension(connector):
-    report = evaluate(connector.scan(["retail_raw"]))
-    tables = {t.table.rsplit(".", 1)[1]: t for t in report.tables}
+    evaluation = evaluate(read_database(connector, ["retail_raw"]))
+    tables = {t.table.rsplit(".", 1)[1]: t for t in evaluation.report.tables}
 
     # Unmarked personal data in the customer master only.
     pii = {
-        f.column for f in tables["cust_mstr"].findings if f.check_id == "column.pii.unclassified"
+        f.column
+        for f in evaluation.findings_for("quorlo_demo.retail_raw.cust_mstr")
+        if f.check_id == "column.pii.unclassified"
     }
     assert pii == {"nm", "eml", "phn", "addr1", "pc"}
     assert [n for n, t in tables.items() if t.dimensions[Dimension.GOVERNANCE] < 1] == ["cust_mstr"]
@@ -140,7 +142,7 @@ def test_demo_problems_land_in_the_right_dimension(connector):
 
 
 def test_location_comes_from_the_connection_without_credentials(connector):
-    database = connector.scan(["retail_raw"])
+    database = read_database(connector, ["retail_raw"])
     assert database.location.startswith("postgres://")
     assert database.location.endswith("/quorlo_demo")
     assert "@" not in database.location

@@ -9,6 +9,12 @@ from quorlo.models import Database, Schema
 from quorlo.readiness import Dimension, evaluate
 from quorlo.readiness.checks import ColumnDescriptionMissing, TableDescriptionMissing
 
+
+def _evaluated(db, checks=None):
+    evaluation = evaluate(db, checks) if checks else evaluate(db)
+    return evaluation.report, evaluation.findings
+
+
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
 CHECKS = (TableDescriptionMissing(), ColumnDescriptionMissing())
 
@@ -23,7 +29,9 @@ def database(*tables, location="postgres://h:5432/db"):
 
 
 def run(db, at=T0, checks=CHECKS, schemas=None):
-    return ScanRun.record(db, evaluate(db, checks), started_at=at, finished_at=at, schemas=schemas)
+    return ScanRun.record(
+        db, *_evaluated(db, checks), started_at=at, finished_at=at, schemas=schemas
+    )
 
 
 def orders(description=None, total_description=None):
@@ -47,13 +55,13 @@ def test_record_captures_target_and_checks():
     )
     assert r.schemas == ("public", "sales")
     assert r.checks == {"table.description.missing": 1, "column.description.missing": 1}
-    assert r.snapshot.schemas[0].tables[0].name == "orders"
+    assert not hasattr(r, "snapshot")  # the store keeps metadata per schema, not the run
 
 
 def test_timestamps_must_be_aware():
     db = database(orders())
     with pytest.raises(ValidationError, match="timezone-aware"):
-        ScanRun.record(db, evaluate(db, CHECKS), started_at=datetime(2026, 1, 1))
+        ScanRun.record(db, *_evaluated(db, CHECKS), started_at=datetime(2026, 1, 1))
 
 
 def test_run_round_trips_through_json():

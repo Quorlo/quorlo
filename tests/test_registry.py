@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from importlib.metadata import EntryPoint
 from typing import ClassVar
 
@@ -8,8 +8,15 @@ import pytest
 from pydantic import SecretStr
 
 from quorlo import registry
-from quorlo.connector import ConnectionConfig, Connector, ConnectorCapabilities
-from quorlo.models import Database
+from quorlo.connector import (
+    ConnectionConfig,
+    Connector,
+    ConnectorCapabilities,
+    DatabaseInfo,
+    FetchStats,
+    read_database,
+)
+from quorlo.models import Schema
 
 
 class FakeConnector:
@@ -25,8 +32,15 @@ class FakeConnector:
     def list_schemas(self) -> list[str]:
         return []
 
-    def scan(self, schemas: Sequence[str] | None = None) -> Database:
-        return Database(name="fake", platform="fake")
+    def describe(self) -> DatabaseInfo:
+        return DatabaseInfo(name="fake", platform="fake")
+
+    def iter_schemas(self, schemas: Sequence[str] | None = None) -> Iterator[Schema]:
+        yield from ()
+
+    @property
+    def stats(self) -> FetchStats:
+        return FetchStats()
 
     def close(self) -> None:
         pass
@@ -93,3 +107,13 @@ def test_dsn_is_not_leaked_by_repr():
     assert "hunter2" not in config.model_dump_json()
     assert config.read_only
     assert not config.allow_sample_values
+
+
+def test_fetch_stats_accumulate():
+    stats = FetchStats().plus(rows=10, seconds=0.5).plus(rows=0, seconds=0.25)
+    assert (stats.queries, stats.rows, stats.seconds) == (2, 10, 0.75)
+
+
+def test_read_database_collects_the_stream():
+    db = read_database(FakeConnector(ConnectionConfig(dsn=SecretStr("x"))))
+    assert (db.name, db.platform, db.schemas) == ("fake", "fake", ())

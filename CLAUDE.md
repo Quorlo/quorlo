@@ -66,13 +66,17 @@ Prefer making a violation unrepresentable in the code over documenting a rule.
 ```
 src/quorlo/
   models.py          platform-neutral metadata models (Database > Schema > Table > Column)
-  connector.py       Connector protocol, ConnectionConfig, ConnectorCapabilities
+  connector.py       Connector protocol (streaming), DatabaseInfo, FetchStats, read_database
   registry.py        connector discovery via the `quorlo.connectors` entry-point group
-  readiness/         Check protocol, Dimension, Finding, scoring engine, built-in checks
-  connectors/        built-in connectors (postgres)
-  history.py         ScanRun (a saved scan) and diff_runs (what changed between two runs)
-  store.py           RunStore protocol and the SQLite run history
-  cli.py, render.py  Typer CLI and output rendering
+  connectors/postgres/  queries (SQL), runner (snapshot txn + query counting),
+                     catalog (SchemaAssembler: rows -> models), types, connector
+  readiness/         base (Finding, TableCheck, EstateCheck), engine (ReadinessEngine,
+                     Assessment, FindingSink), checks/ (one module per question), names
+  scanner.py         Scanner: fetch -> check -> score -> save, streamed and timed
+  stats.py           Phase, PhaseClock, ScanStats
+  history.py         RunHeader, ScanRun, diff_runs (what changed between two runs)
+  store/             RunStore protocol (base), schema history (migrations), SQLite backend
+  cli.py, render.py  thin Typer CLI; ReportView, RunsView and other output
 demo/                messy demo schema for the docker-compose Postgres
 tests/               unit tests; tests/integration/ needs a running database
 ```
@@ -87,10 +91,17 @@ tests/               unit tests; tests/integration/ needs a running database
   message text. Bump a check's `version` whenever a rule change can change its findings.
 - **Tests never touch the real run history**: `tests/conftest.py` points `QUORLO_STORE`
   at a temp file for every test.
-- **Checks only report what is wrong.** `Check.run(table)` yields `Finding`s. The
-  engine derives the denominator from the check's `Scope` (1 unit per table for
-  TABLE checks, 1 per column for COLUMN checks):
-  `score = 1 - weighted_findings / weighted_possible`.
+- **Scans stream; nothing holds the whole estate.** A connector's `iter_schemas()`
+  yields one complete schema at a time, fetched with a fixed number of queries per
+  schema (Postgres: 3, plus 1 for the schema list) inside one read-only REPEATABLE READ
+  snapshot. The `Scanner` passes each schema to the engine and the run writer, then
+  drops it. Never add a per-table query; `test_postgres_batching.py` holds the count.
+- **Checks only report what is wrong.** A `TableCheck.run(table)` judges one table. An
+  `EstateCheck` judges tables against the estate: `start()` returns a per-scan run that
+  `observe()`s each table (keep a small signature, not the table) and reports once at the
+  end. Check objects stay stateless. Findings go to a `FindingSink` (the run writer when
+  saving), not into the report. Each check's pass rate is `1 - failed / units`, units
+  from its `Scope`; scores are weight-averaged pass rates.
 
 ## Commands
 
@@ -109,6 +120,10 @@ uv run quorlo scan --connector postgres \
 
 ## Conventions
 
+- **Follow OOP and clean-code practice; this is the project's strongest rule.** Small
+  classes and functions with one job each, clear names, behaviour on the object that owns
+  the data, collaborators behind Protocols, no god modules or long functions, no
+  duplication. When touching code that breaks this, refactor it in its own commit.
 - Run lint, format check and unit tests before every commit.
 - Every commit is signed off: `git commit -s` (DCO, see CONTRIBUTING.md).
 - Small, focused commits. Conventional-style subjects: `feat(scope): ...`,

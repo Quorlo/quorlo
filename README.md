@@ -40,6 +40,8 @@ Overall: 44% across 8 tables, 77 findings
   Can I trust it?           14%
   Am I allowed to use it?   88%
   Not scored yet (no checks): lineage
+Scanned 2 schemas, 8 tables, 39 columns in 0.03s
+  fetch 0.02s (7 queries) · checks 0.00s · scoring 0.00s · persistence 0.00s
 Saved as run 20261003T174608Z-b2a84e.
 ```
 

@@ -40,7 +40,9 @@ CREATE ROLE quorlo_reader LOGIN PASSWORD '...';
 
 System schemas (`pg_catalog`, `information_schema`, `pg_toast`, temporary schemas) are skipped. Partitions are skipped in favour of their partitioned parent table.
 
-All catalog queries for a scan run in one transaction, so they see one consistent snapshot.
+Each schema costs exactly **three queries** (tables, columns, constraints), plus one for the schema list, however many tables it has. Schemas stream one at a time, so memory stays bounded by the largest schema. A scan prints its query count, for example `fetch 0.02s (7 queries)` for two schemas.
+
+All of a scan's queries run in **one read-only `REPEATABLE READ` transaction**, so they see a single consistent snapshot. A table created or altered while the scan runs is not half-seen.
 
 !!! note "Row counts"
     The row count is the planner's estimate from the last `ANALYZE` or autovacuum. It is empty for a table that has never been analyzed. Quorlo never counts rows.

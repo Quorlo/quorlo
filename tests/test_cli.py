@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+import os
+from collections.abc import Iterator, Sequence
 from typing import ClassVar
 
 import pytest
@@ -10,7 +11,13 @@ from typer.testing import CliRunner
 from factories import make_column, make_table
 from quorlo import registry
 from quorlo.cli import app
-from quorlo.connector import ConnectionConfig, ConnectorCapabilities, ConnectorError
+from quorlo.connector import (
+    ConnectionConfig,
+    ConnectorCapabilities,
+    ConnectorError,
+    DatabaseInfo,
+    FetchStats,
+)
 from quorlo.models import Database, Schema
 from quorlo.readiness import evaluate
 from quorlo.registry import ConnectorInfo
@@ -36,7 +43,14 @@ class StubConnector:
     def list_schemas(self) -> list[str]:
         return ["public"]
 
-    def scan(self, schemas: Sequence[str] | None = None) -> Database:
+    def describe(self) -> DatabaseInfo:
+        return DatabaseInfo(name="db", platform="stub")
+
+    @property
+    def stats(self) -> FetchStats:
+        return FetchStats()
+
+    def iter_schemas(self, schemas: Sequence[str] | None = None) -> Iterator[Schema]:
         StubConnector.last_schemas = schemas
         good = make_table(
             "customers",
@@ -49,9 +63,7 @@ class StubConnector:
             description="Raw import." if StubConnector.staging_documented else None,
             columns=[make_column("c1"), make_column("f2")],
         )
-        return Database(
-            name="db", platform="stub", schemas=(Schema(name="public", tables=(good, bad)),)
-        )
+        yield Schema(name="public", tables=(good, bad))
 
     def close(self) -> None:
         pass
@@ -64,7 +76,7 @@ class StubConnector:
 
 
 class FailingConnector(StubConnector):
-    def scan(self, schemas: Sequence[str] | None = None) -> Database:
+    def iter_schemas(self, schemas: Sequence[str] | None = None) -> Iterator[Schema]:
         raise ConnectorError("could not connect to server")
 
 
@@ -126,7 +138,8 @@ def test_scan_json_output(stub_registry):
     scores = {t["table"]: t["score"] for t in data["tables"]}
     assert scores["db.public.customers"] > scores["db.public.stg_imp"]
     assert data["score"] == pytest.approx(sum(scores.values()) / 2)
-    assert data["findings_count"] == len([f for t in data["tables"] for f in t["findings"]])
+    assert data["findings_count"] == len(data["findings"]) > 0
+    assert all("fingerprint" in f for f in data["findings"])
 
 
 def test_scan_reads_dsn_from_env_and_passes_schemas(stub_registry, monkeypatch):
@@ -173,7 +186,7 @@ def test_scan_keeps_schema_in_names_when_several_schemas():
             Schema(name="mart", tables=(make_table("orders", schema="mart"),)),
         ),
     )
-    assert _name_prefix(evaluate(db)) == "db."
+    assert _name_prefix(evaluate(db).report) == "db."
 
 
 # --- run history ---------------------------------------------------------------------
@@ -230,7 +243,12 @@ def test_runs_lists_newest_first_and_show_reprints(stub_registry, monkeypatch):
     assert listing.index(second) < listing.index(first)
     assert runner.invoke(app, ["runs", "--limit", "1"]).output.count("stub:db") == 1
 
-    shown = runner.invoke(app, ["runs", "show", first[:18]])
+    # The shortest prefix that tells the two runs apart. Both start in the same second, so
+    # a fixed-length prefix could match both (and did, 1 time in 16).
+    prefix = (
+        os.path.commonprefix([first, second]) + first[len(os.path.commonprefix([first, second]))]
+    )
+    shown = runner.invoke(app, ["runs", "show", prefix])
     assert shown.exit_code == 0, shown.output
     assert f"Run {first}" in shown.output
     assert "stg_imp" in shown.output

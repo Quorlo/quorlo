@@ -18,7 +18,12 @@ A dimension with no checks is reported as *not scored yet*, never as 0% or 100%.
 
 ## Checks and findings
 
-A check looks at one table and reports only what is wrong, as **findings**. It can also see every other scanned table, which is how near-duplicates are found. Each check declares:
+A check reports only what is wrong, as **findings**. There are two kinds:
+
+- a **table check** judges one table on its own. All but one of the built-in checks are this kind;
+- an **estate check** judges tables against the rest of the estate, which is how near-duplicates are found. It observes each table as schemas stream past, keeping only a small signature, and reports once every table has been seen.
+
+Each check declares:
 
 - a **scope**: `table` (one verdict for the whole table) or `column` (one per column). The personal-data check is table-scoped on purpose: one unmarked column is enough to make a table unsafe to use, though its findings still name each column;
 - a **severity**: `low`, `medium` or `high`;
