@@ -139,3 +139,12 @@ def test_scan_connector_error(stub_registry):
     result = runner.invoke(app, ["scan", "-c", "failing", "--dsn", "x"])
     assert result.exit_code == 2
     assert "could not connect" in result.output
+
+
+def test_scan_details_shows_full_targets_without_database_prefix(stub_registry):
+    result = runner.invoke(app, ["scan", "-c", "stub", "--dsn", "stub://", "--details"])
+    assert result.exit_code == 0, result.output
+    findings = result.output.split("Findings in db", 1)[1]
+    assert "public.stg_imp.c1" in findings
+    assert "db.public" not in findings
+    assert "…" not in findings

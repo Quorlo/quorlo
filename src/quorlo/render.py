@@ -52,13 +52,16 @@ def render_report(report: ScanReport, console: Console, details: bool = False) -
 
     if details and report.findings:
         console.print()
-        findings = RichTable(title="Findings")
-        findings.add_column("Target")
-        findings.add_column("Check", style="dim")
+        findings = RichTable(title=f"Findings in {report.database}")
+        # Fold rather than truncate: a target cut to "retail_…" is useless.
+        findings.add_column("Target", overflow="fold")
+        findings.add_column("Check", style="dim", overflow="fold")
         findings.add_column("Severity")
         findings.add_column("Problem")
+        prefix = f"{report.database}."
         for f in report.findings:
-            findings.add_row(f.target, f.check_id, f.severity.value, f.message)
+            target = f.target.removeprefix(prefix)
+            findings.add_row(target, f.check_id, f.severity.value, f.message)
         console.print(findings)
 
 
