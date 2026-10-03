@@ -2,7 +2,7 @@ import pytest
 
 from factories import make_column, make_table
 from quorlo.models import Database, Schema, TableKind
-from quorlo.readiness import Dimension, evaluate, evaluate_table
+from quorlo.readiness import Dimension, ScanContext, Scope, Severity, evaluate, evaluate_table
 
 
 def documented_table():
@@ -81,3 +81,36 @@ def test_empty_database_has_no_score():
     report = evaluate(Database(name="db", platform="test"))
     assert report.score is None
     assert report.dimensions == {}
+
+
+def test_checks_receive_every_scanned_table():
+    seen: list[tuple[str, ...]] = []
+
+    class SpyCheck:
+        id = "spy"
+        dimension = Dimension.CERTIFICATION
+        scope = Scope.TABLE
+        severity = Severity.LOW
+        weight = 1.0
+        description = "Records what it can see."
+
+        def applies_to(self, table):
+            return True
+
+        def run(self, table, context: ScanContext):
+            seen.append(tuple(t.name for t in context.others(table)))
+            return []
+
+    db = Database(
+        name="db",
+        platform="test",
+        schemas=(Schema(name="public", tables=(make_table("a"), make_table("b"))),),
+    )
+    evaluate(db, checks=[SpyCheck()])
+    assert seen == [("b",), ("a",)]
+
+
+def test_scan_context_lookup():
+    ctx = ScanContext.of_tables([make_table("a"), make_table("b")])
+    assert ctx.table("db.public.a").name == "a"
+    assert ctx.table("db.public.zzz") is None

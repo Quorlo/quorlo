@@ -20,7 +20,7 @@ from statistics import fmean
 from pydantic import BaseModel, ConfigDict
 
 from quorlo.models import Database, Table, TableKind
-from quorlo.readiness.base import Check, Dimension, Finding, Scope
+from quorlo.readiness.base import Check, Dimension, Finding, ScanContext, Scope
 from quorlo.readiness.checks import DEFAULT_CHECKS
 
 
@@ -69,7 +69,13 @@ def _weighted(results: Iterable[CheckResult]) -> float | None:
     return sum(r.weight * r.pass_rate for r in results) / total
 
 
-def evaluate_table(table: Table, checks: Sequence[Check] = DEFAULT_CHECKS) -> TableReadiness:
+def evaluate_table(
+    table: Table,
+    checks: Sequence[Check] = DEFAULT_CHECKS,
+    context: ScanContext | None = None,
+) -> TableReadiness:
+    """Score one table. Without a context, cross-table checks see only this table."""
+    context = context or ScanContext.of_tables([table])
     results: list[CheckResult] = []
     findings: list[Finding] = []
     for check in checks:
@@ -78,7 +84,7 @@ def evaluate_table(table: Table, checks: Sequence[Check] = DEFAULT_CHECKS) -> Ta
         units = 1 if check.scope is Scope.TABLE else len(table.columns)
         if units == 0:
             continue
-        found = list(check.run(table))
+        found = list(check.run(table, context))
         # A misbehaving check cannot push a score below zero.
         failed = min(len(found), units)
         results.append(
@@ -109,7 +115,8 @@ def evaluate_table(table: Table, checks: Sequence[Check] = DEFAULT_CHECKS) -> Ta
 
 
 def evaluate(database: Database, checks: Sequence[Check] = DEFAULT_CHECKS) -> ScanReport:
-    tables = tuple(evaluate_table(t, checks) for t in database.iter_tables())
+    context = ScanContext.of(database)
+    tables = tuple(evaluate_table(t, checks, context) for t in context.tables)
 
     scores = [t.score for t in tables if t.score is not None]
     dimensions = {}
