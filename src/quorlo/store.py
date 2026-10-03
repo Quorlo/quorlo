@@ -148,11 +148,11 @@ def _pack(model: BaseModel) -> bytes:
 class SqliteRunStore:
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
-        if str(path) != ":memory:":
-            self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
+            if str(path) != ":memory:":
+                self.path.parent.mkdir(parents=True, exist_ok=True)
             self._conn = sqlite3.connect(self.path)
-        except sqlite3.Error as exc:
+        except (OSError, sqlite3.Error) as exc:
             raise StoreError(f"Cannot open the run store at {self.path}: {exc}") from None
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
