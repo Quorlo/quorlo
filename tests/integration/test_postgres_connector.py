@@ -1,7 +1,7 @@
 """Postgres connector against the demo database (demo/seed.sql).
 
     docker compose up -d
-    QUORLO_TEST_DSN=postgresql://quorlo:quorlo@localhost:55432/quorlo_demo \
+    QUORLO_TEST_DSN=postgresql://quorlo:quorlo@localhost:15432/quorlo_demo \
         uv run pytest -m integration
 """
 

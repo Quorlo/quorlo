@@ -46,14 +46,14 @@ jobs:
           POSTGRES_PASSWORD: quorlo
           POSTGRES_DB: quorlo_demo
         ports:
-          - 55432:5432
+          - 15432:5432
         options: >-
           --health-cmd "pg_isready -U quorlo -d quorlo_demo"
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
     env:
-      QUORLO_TEST_DSN: postgresql://quorlo:quorlo@localhost:55432/quorlo_demo
+      QUORLO_TEST_DSN: postgresql://quorlo:quorlo@localhost:15432/quorlo_demo
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6

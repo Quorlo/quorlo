@@ -12,9 +12,9 @@ Scan the bundled demo database, a deliberately messy retail schema. You need [uv
 git clone https://github.com/Quorlo/quorlo.git
 cd quorlo
 uv sync
-docker compose up -d        # Postgres with the demo schema on localhost:55432
+docker compose up -d        # Postgres with the demo schema on localhost:15432
 
-export QUORLO_DSN=postgresql://quorlo:quorlo@localhost:55432/quorlo_demo
+export QUORLO_DSN=postgresql://quorlo:quorlo@localhost:15432/quorlo_demo
 uv run quorlo scan
 ```
 

@@ -94,11 +94,11 @@ uv run ruff check .                  # lint
 uv run ruff format --check .         # format check (drop --check to fix)
 uv run pytest                        # unit tests (no Docker needed)
 
-docker compose up -d                 # demo Postgres on localhost:55432
-QUORLO_TEST_DSN=postgresql://quorlo:quorlo@localhost:55432/quorlo_demo \
+docker compose up -d                 # demo Postgres on localhost:15432
+QUORLO_TEST_DSN=postgresql://quorlo:quorlo@localhost:15432/quorlo_demo \
   uv run pytest -m integration       # integration tests
 uv run quorlo scan --connector postgres \
-  --dsn postgresql://quorlo:quorlo@localhost:55432/quorlo_demo
+  --dsn postgresql://quorlo:quorlo@localhost:15432/quorlo_demo
 ```
 
 ## Conventions
@@ -110,5 +110,6 @@ uv run quorlo scan --connector postgres \
 - Unit tests must run without Docker or network access.
 - Tests that need a real database are marked `@pytest.mark.integration`, take their
   DSN from `QUORLO_TEST_DSN`, and skip when it is unset. Plain `pytest` excludes them.
-- The demo Postgres listens on host port 55432 (not 5432) so it never collides with
-  a developer's local Postgres.
+- The demo Postgres listens on host port 15432. Not 5432, so it never collides with a
+  developer's local Postgres, and below 49152, because Windows reserves ranges inside the
+  dynamic port range (49152-65535) for Hyper-V and WSL, and Docker Desktop cannot publish them.
