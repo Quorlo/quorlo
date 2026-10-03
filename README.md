@@ -2,6 +2,8 @@
 
 **Make your data AI-ready.** Quorlo scans Databricks, Snowflake, Postgres and MySQL, scores how ready each table is for AI agents, drafts the missing metadata, and writes what your data owners approve back to the catalogs you already use.
 
+**Documentation:** https://quorlo.github.io/quorlo/
+
 > **Status: pre-alpha.** The first slice works: a read-only Postgres scan with a readiness score for the "What is it?" question. Enrichment, review and write-back are still being designed, and nothing is published to PyPI yet. Ideas, use cases and design feedback are very welcome in [Discussions](https://github.com/Quorlo/quorlo/discussions).
 
 ## Quickstart

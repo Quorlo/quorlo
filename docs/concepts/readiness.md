@@ -1,0 +1,60 @@
+# Readiness model
+
+Quorlo measures how ready a table is for an AI agent, as scores between 0% and 100%: one overall and one for each of the five questions.
+
+## Dimensions
+
+Every check answers exactly one of the five questions. In the code these are the members of `quorlo.readiness.Dimension`:
+
+| Dimension | Question | Status |
+| --- | --- | --- |
+| `meaning` | What is it? | 4 checks |
+| `certification` | Is it the right one? | planned |
+| `trust` | Can I trust it? | planned |
+| `lineage` | Where did it come from? | planned |
+| `governance` | Am I allowed to use it? | planned |
+
+A dimension with no checks is reported as *not scored yet*, never as 0% or 100%. Scores are always shown per dimension, because one opaque number can't tell a data owner what kind of gap they have.
+
+## Checks and findings
+
+A check looks at one table and reports only what is wrong, as **findings**. Each check declares:
+
+- a **scope**: `table` (judges the table as a whole) or `column` (judges each column);
+- a **severity**: `low`, `medium` or `high`;
+- a **weight**: how much it counts towards the score;
+- which tables it **applies to**. For example, views are not expected to have a primary key.
+
+All built-in checks are listed in the [checks reference](../reference/checks.md).
+
+## Scoring
+
+Checks never compute scores; the engine does, in three steps.
+
+**1. Each check gets a pass rate.** A table-scope check evaluates one unit per table, a column-scope check one per column:
+
+```
+pass rate = 1 - findings / units evaluated
+```
+
+**2. Each table gets a weighted average of its checks' pass rates**: overall, and per dimension using only that dimension's checks.
+
+**3. A scan's scores are the average of its tables' scores.**
+
+### Example
+
+A table with 20 columns, all documented and readably named, a primary key, but no table description:
+
+| Check | Weight | Pass rate |
+| --- | --- | --- |
+| `table.description.missing` | 2 | 0 / 1 passed → 0% |
+| `column.description.missing` | 1 | 20 / 20 → 100% |
+| `table.primary_key.missing` | 1 | 1 / 1 → 100% |
+| `column.name.cryptic` | 1 | 20 / 20 → 100% |
+
+Score = (2 × 0 + 1 × 1 + 1 × 1 + 1 × 1) / 5 = **60%**.
+
+Averaging per check, rather than counting every column as a unit, keeps a wide table's column checks from drowning out its table-level checks. Counted per unit, this table would score about 95% despite having no description at all.
+
+!!! note "Nothing evaluated is not zero"
+    If no check applies to a table (say, a view with no columns), its score is *n/a*, not 0%.

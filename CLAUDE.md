@@ -113,3 +113,7 @@ uv run quorlo scan --connector postgres \
 - The demo Postgres listens on host port 15432. Not 5432, so it never collides with a
   developer's local Postgres, and below 49152, because Windows reserves ranges inside the
   dynamic port range (49152-65535) for Hyper-V and WSL, and Docker Desktop cannot publish them.
+- Docs live in `docs/` (MkDocs Material, config in `mkdocs.yml`). Preview with
+  `uv run --group docs mkdocs serve`; CI builds them with `--strict`, so broken links fail.
+  Merges to `main` publish them to GitHub Pages. Update the docs when you change
+  user-facing behavior, CLI options or checks.
