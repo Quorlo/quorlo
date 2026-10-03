@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Hashable, Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import ClassVar, Protocol, runtime_checkable
+from typing import Any, ClassVar, Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -83,15 +83,20 @@ class Finding(BaseModel):
         return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()[:16]
 
 
+_T = TypeVar("_T")
+
+
 @dataclass(frozen=True)
 class ScanContext:
     """Everything that was scanned, for checks that compare a table with the others."""
 
     tables: tuple[Table, ...]
     _by_name: dict[str, Table] = field(init=False, repr=False, compare=False)
+    _memo: dict[Hashable, Any] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "_by_name", {t.qualified_name: t for t in self.tables})
+        object.__setattr__(self, "_memo", {})
 
     @classmethod
     def of(cls, database: Database) -> ScanContext:
@@ -106,6 +111,16 @@ class ScanContext:
 
     def others(self, table: Table) -> Iterable[Table]:
         return (t for t in self.tables if t.qualified_name != table.qualified_name)
+
+    def memo(self, key: Hashable, build: Callable[[], _T]) -> _T:
+        """Build something derived from the scanned tables once per scan, e.g. an index.
+
+        Cross-table checks run once per table; without this, each run would rebuild
+        the same index and the check would cost O(n²).
+        """
+        if key not in self._memo:
+            self._memo[key] = build()
+        return self._memo[key]
 
 
 @runtime_checkable

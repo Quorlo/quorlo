@@ -132,6 +132,18 @@ COPY_MARKERS = frozenset(
 def concept_key(table_name: str) -> frozenset[str]:
     """What a table is about, ignoring word order and version or copy markers.
 
-    revenue_daily and daily_revenue_v2 both give {'daily', 'revenue'}.
+    revenue_daily and daily_revenue_v2 both give {'daily', 'revenue'}, and orders_bak_2023
+    gives {'orders'}. A number only counts as a marker right after one, so orders_2023 and
+    orders_2024 (or table_1 and table_2) stay different things.
     """
-    return frozenset(w for w in tokens(table_name) if not w.isdigit() and w not in COPY_MARKERS)
+    words: list[str] = []
+    after_marker = False
+    for word in tokens(table_name):
+        if word in COPY_MARKERS:
+            after_marker = True
+        elif word.isdigit() and after_marker:
+            continue
+        else:
+            words.append(word)
+            after_marker = False
+    return frozenset(words)
