@@ -17,6 +17,8 @@ class TableDescriptionMissing(BaseCheck):
     severity = Severity.HIGH
     weight = 2.0
     description = "The table has a business description."
+    summary = "no table description"
+    fix_hint = "COMMENT ON TABLE {table} IS '<what one row represents, and what it is for>';"
 
     def run(self, table: Table) -> Iterable[Finding]:
         if is_blank(table.description):
@@ -34,6 +36,8 @@ class ColumnDescriptionMissing(BaseCheck):
     severity = Severity.MEDIUM
     weight = 1.0
     description = "Each column has a description."
+    summary = "no column description"
+    fix_hint = "COMMENT ON COLUMN {table}.{column} IS '<meaning, units, codes>';"
 
     def run(self, table: Table) -> Iterable[Finding]:
         for col in table.columns:
@@ -53,6 +57,8 @@ class PrimaryKeyMissing(BaseCheck):
     severity = Severity.MEDIUM
     weight = 1.0
     description = "The table declares a primary key, so an agent knows what identifies a row."
+    summary = "no primary key"
+    fix_hint = "ALTER TABLE {table} ADD PRIMARY KEY (<columns>);  or name them in the description"
 
     def applies_to(self, table: Table) -> bool:
         # Views and foreign tables cannot declare one, so they are not penalised for it.
@@ -74,6 +80,8 @@ class ColumnNameCryptic(BaseCheck):
     severity = Severity.LOW
     weight = 1.0
     description = "Column names are readable words, not cryptic abbreviations."
+    summary = "cryptic column name"
+    fix_hint = "rename, or explain it: COMMENT ON COLUMN {table}.{column} IS '<what it means>';"
 
     def run(self, table: Table) -> Iterable[Finding]:
         for col in table.columns:

@@ -100,6 +100,10 @@ class CheckInfo(Protocol):
     weight: ClassVar[float]
     version: ClassVar[int]
     description: ClassVar[str]
+    summary: ClassVar[str]
+    """Short problem phrase for a line that groups many findings: "no table description"."""
+    fix_hint: ClassVar[str]
+    """One actionable line, with {table} and {column} placeholders."""
 
     def applies_to(self, table: Table) -> bool: ...
 

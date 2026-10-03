@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable, Iterator, Sequence
 from statistics import fmean
-from typing import Protocol
+from typing import Generic, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -172,10 +172,33 @@ class TableTally:
         )
 
 
+def _members(protocol: type) -> set[str]:
+    """The public attributes and methods a protocol declares, including inherited ones."""
+    names: set[str] = set()
+    for cls in protocol.__mro__:
+        if cls in (object, Protocol, Generic):
+            continue
+        names |= set(getattr(cls, "__annotations__", {})) | set(vars(cls))
+    return {n for n in names if not n.startswith("_")}
+
+
+def _reject_unknown_kinds(checks: Sequence[Check]) -> None:
+    """A check that is neither kind would otherwise be skipped without a word."""
+    for check in checks:
+        if not isinstance(check, (TableCheck, EstateCheck)):
+            members = _members(TableCheck) | _members(EstateCheck)
+            missing = sorted(m for m in members if not hasattr(check, m))
+            raise TypeError(
+                f"{type(check).__name__} is not a TableCheck or an EstateCheck"
+                + (f"; missing: {', '.join(missing)}" if missing else "")
+            )
+
+
 class Assessment:
     """One scan in progress: feed it schemas, then finish the checks, then get the report."""
 
     def __init__(self, checks: Sequence[Check], sink: FindingSink) -> None:
+        _reject_unknown_kinds(checks)
         self._table_checks = [c for c in checks if isinstance(c, TableCheck)]
         self._estate_runs: list[tuple[EstateCheck, EstateCheckRun]] = [
             (c, c.start()) for c in checks if isinstance(c, EstateCheck)

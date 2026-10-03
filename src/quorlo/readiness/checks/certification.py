@@ -67,6 +67,8 @@ class DuplicateSuspected(BaseCheck):
     # name (orders_2023) no longer count as version markers.
     version = 2
     description = "No other table looks like the same thing without saying which one to use."
+    summary = "looks like the same data as another table"
+    fix_hint = "mark the one to use: COMMENT ON TABLE {table} IS 'Source of truth for ...';"
 
     min_type_overlap: ClassVar[float] = 0.5
     max_named_matches: ClassVar[int] = 5
