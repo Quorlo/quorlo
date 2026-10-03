@@ -11,6 +11,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
 
+from quorlo.history.findings import FindingQuery
 from quorlo.history.models import RunHeader, RunTarget, ScanRun
 from quorlo.models import Schema
 from quorlo.readiness import Finding, ScanReport
@@ -98,6 +99,10 @@ class RunStore(Protocol):
         """Load a finished run by its id, or by a prefix that matches exactly one run."""
         ...
 
+    def summary(self, run_id: str) -> RunSummary:
+        """A finished run's id, target and counts, by id or unique prefix."""
+        ...
+
     def report(self, run_id: str) -> ScanReport:
         """A finished run's scores, without loading its findings."""
         ...
@@ -106,8 +111,8 @@ class RunStore(Protocol):
         """The metadata a run scanned, one schema at a time."""
         ...
 
-    def findings(self, run_id: str) -> Iterator[Finding]:
-        """A run's findings, streamed rather than loaded all at once."""
+    def findings(self, run_id: str, query: FindingQuery | None = None) -> Iterator[Finding]:
+        """A run's findings, filtered and grouped by table, streamed rather than loaded."""
         ...
 
     def list(self, target: RunTarget | None = None, limit: int = 20) -> list[RunSummary]:

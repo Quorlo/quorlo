@@ -19,6 +19,17 @@ QUORLO_TEST_DSN=postgresql://quorlo:quorlo@localhost:15432/quorlo_demo \
   uv run pytest -m integration
 ```
 
+## Adding a check
+
+A check is a class in `src/quorlo/readiness/checks/`, in the module for the question it answers. Subclass `BaseCheck` and declare:
+
+- `id`, `dimension`, `scope`, `severity`, `description`, and optionally `weight`;
+- `summary`: a short problem phrase for a line that groups many findings, e.g. `"no table description"`;
+- `fix_hint`: one actionable line. `{table}` and `{column}` are filled in, e.g. `"COMMENT ON TABLE {table} IS '...';"`;
+- `version`: bump it whenever a rule change can change the check's findings, so `quorlo diff` can tell a stricter check from worse data.
+
+A class that leaves out a declaration, or uses another placeholder, fails when Quorlo is imported. A check that judges one table implements `run(table)`. A check that compares tables across the estate implements `start()`, returning an object that `observe()`s each table and reports `findings()` once at the end. Add it to `DEFAULT_CHECKS` and document it in `docs/reference/checks.md`.
+
 ## Working on these docs
 
 ```bash

@@ -17,6 +17,8 @@ class FreshnessUntracked(BaseCheck):
     severity = Severity.MEDIUM
     weight = 1.0
     description = "The table has a column that tells an agent how fresh its data is."
+    summary = "nothing shows when rows were last loaded or updated"
+    fix_hint = "ALTER TABLE {table} ADD COLUMN updated_at timestamp;  -- kept current by the load"
 
     def applies_to(self, table: Table) -> bool:
         # A view is as fresh as the tables it reads; those are checked instead.

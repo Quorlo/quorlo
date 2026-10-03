@@ -25,7 +25,11 @@ DEFAULT_CHECKS: tuple[Check, ...] = (
     DuplicateSuspected(),
 )
 
+# Look up a check by id, e.g. to show the fix hint for a finding read back from a run.
+CHECKS_BY_ID: dict[str, Check] = {check.id: check for check in DEFAULT_CHECKS}
+
 __all__ = [
+    "CHECKS_BY_ID",
     "DEFAULT_CHECKS",
     "ColumnDescriptionMissing",
     "ColumnNameCryptic",

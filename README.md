@@ -43,6 +43,8 @@ Overall: 44% across 8 tables, 77 findings
 Scanned 2 schemas, 8 tables, 39 columns in 0.03s
   fetch 0.02s (7 queries) · checks 0.00s · scoring 0.00s · persistence 0.00s
 Saved as run 20261003T174608Z-b2a84e.
+Next: quorlo findings                     what to fix, worst table first
+      quorlo findings --table stg_imp_01  start with the lowest-scoring table
 ```
 
 Each problem shows up under the question it gets in the way of. `stg_imp_01` has columns named `c1`, `c2`, `f1` and `f2` and no documentation, so it scores 0% on *Meaning*. `cust_mstr` holds names, emails and phone numbers nobody marked as personal data, so it fails *Governed*. `revenue_daily` and `daily_revenue_v2` look like the same data and neither says which to use, so both fail *Certified*. Almost nothing records when it was last loaded, so *Trust* is low everywhere. `dim_product` gets everything right and scores 100%.
@@ -52,7 +54,8 @@ Every scan is saved, so the next one tells you what changed since the last, and 
 More options:
 
 ```bash
-uv run quorlo scan --details              # list every finding with the column it applies to
+uv run quorlo findings                    # what to fix, worst table first, with fixes
+uv run quorlo findings --table cust_mstr  # one table; also --dimension, --check
 uv run quorlo scan --schema retail_raw    # scan one schema (repeat for more)
 uv run quorlo scan --format json          # machine-readable report
 uv run quorlo diff                        # compare the last two runs

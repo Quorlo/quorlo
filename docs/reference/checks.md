@@ -2,6 +2,8 @@
 
 The built-in checks. Every one belongs to a [dimension](../concepts/readiness.md#dimensions), and all of them work from metadata only: names, types, comments, constraints and tags, never the data itself.
 
+Every check also declares a one-line fix, shown under its findings by [`quorlo findings`](cli.md#quorlo-findings).
+
 | ID | Dimension | Scope | Severity | Weight |
 | --- | --- | --- | --- | --- |
 | [`table.description.missing`](#tabledescriptionmissing) | meaning | table | high | 2 |

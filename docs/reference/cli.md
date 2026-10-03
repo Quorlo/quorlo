@@ -9,7 +9,7 @@ quorlo [COMMAND] [OPTIONS]
 Scan a platform read-only and score how AI-ready each table is.
 
 ```bash
-quorlo scan [--dsn DSN] [--connector NAME] [--schema NAME]... [--details] [--format table|json]
+quorlo scan [--dsn DSN] [--connector NAME] [--schema NAME]... [--format table|json]
             [--save | --no-save] [--store PATH]
 ```
 
@@ -18,19 +18,22 @@ quorlo scan [--dsn DSN] [--connector NAME] [--schema NAME]... [--details] [--for
 | `--dsn` | `$QUORLO_DSN` | Connection string. Prefer the environment variable, which keeps passwords out of shell history. Required one way or the other. |
 | `--connector`, `-c` | `postgres` | Which installed connector to use. See `quorlo connectors`. |
 | `--schema`, `-s` | all non-system schemas | Schema to scan. Repeat for several. An unknown schema is an error. |
-| `--details` | off | After the summary, list every finding. |
 | `--format`, `-f` | `table` | `table` for a terminal summary, `json` for a machine-readable report. |
 | `--save` / `--no-save` | save | Save the run to the [run history](../guides/run-history.md). |
 | `--store` | `$QUORLO_STORE`, else the user data directory | The run history file. |
 
-After the summary come how the run compares with the previous run of the same database and schemas (when there is one), where the time went, and the run id:
+After the summary come how the run compares with the previous run of the same database and schemas (when there is one), where the time went, the run id, and what to run next:
 
 ```
 Since last run (2 days ago): 44% → 48% (+4 pts), 3 resolved, 1 new
 Scanned 2 schemas, 8 tables, 39 columns in 0.42s
   fetch 0.12s (7 queries) · checks 0.20s · scoring 0.01s · persistence 0.09s
 Saved as run 20261003T174608Z-baf7f9.
+Next: quorlo findings                     what to fix, worst table first
+      quorlo findings --table stg_imp_01  start with the lowest-scoring table
 ```
+
+The scan summary shows scores, not individual findings: [`quorlo findings`](#quorlo-findings) is where you see those.
 
 The timing line splits the scan into phases. *fetch* is reading metadata from the platform, with the number of queries it took. *checks* is running the checks. *scoring* is turning results into scores. *persistence* is writing the run history. Schemas stream through these phases one at a time, so the times are totals across all schemas.
 
@@ -64,7 +67,30 @@ List saved runs, newest first: id, when, which schemas, score, table and finding
 
 ### `quorlo runs show RUN`
 
-Print the report of a saved run, as `quorlo scan` printed it. `RUN` is a run id or any prefix that matches exactly one run, such as `20261003T1746`. Takes `--details`, `--format` and `--store`.
+Print the scores of a saved run, as `quorlo scan` printed them. `RUN` is a run id or any prefix that matches exactly one run, such as `20261003T1746`. Takes `--format` and `--store`. With `--format json` the output includes every finding. For a readable list, use `quorlo findings --run RUN`.
+
+## `quorlo findings`
+
+What to fix in a saved run: worst table first, grouped under the five questions, one line per check with the columns it applies to, and a fix for each.
+
+```bash
+quorlo findings                                  # the latest saved run
+quorlo findings --table cust_mstr                # one table
+quorlo findings -d governance -d trust           # only these questions
+quorlo findings --check column.pii.unclassified  # only this check
+quorlo findings --run 20261003T1746 -f json      # an older run, for scripts
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--run` | the latest saved run | Run id, or a prefix that matches exactly one run. |
+| `--table`, `-t` | all | A table name, `schema.table` or the full name. Repeatable. A bare name that exists in several schemas shows all of them. |
+| `--dimension`, `-d` | all | `meaning`, `certification`, `trust`, `lineage` or `governance`. Repeatable. |
+| `--check`, `-c` | all | A check id from the [checks reference](checks.md). Repeatable; an unknown id is an error that lists the real ones. |
+| `--format`, `-f` | `table` | `json` gives the same grouping: `run_id`, `target`, `query`, and `tables`, each with its `groups` (`check_id`, `dimension`, `severity`, `summary`, `columns`, `messages`, `fix_hint`, `count`). |
+| `--store` | `$QUORLO_STORE`, else the user data directory | The run history file. |
+
+Several values of one option widen the selection; different options narrow it. Filtering happens in the run store, so a large run is never loaded whole. Fix hints use `COMMENT ON`, which Postgres, Snowflake and Databricks share.
 
 ## `quorlo diff`
 

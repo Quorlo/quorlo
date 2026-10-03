@@ -24,3 +24,11 @@ once it has a first release.
   `quorlo.connectors` entry-point group.
 - Demo database (`docker compose up -d`) with a deliberately messy retail schema.
 - Documentation site at https://quorlo.github.io/quorlo/.
+- `quorlo findings`: what to fix in a saved run, worst table first, grouped under the five
+  questions with one line per check and a fix hint, filterable by table, question and check,
+  with `--format json`. Every check now declares a summary and a fix hint.
+- `quorlo scan` ends with the commands to run next.
+
+### Removed
+
+- `quorlo scan --details` and `quorlo runs show --details`: use `quorlo findings`.

@@ -123,6 +123,8 @@ class SpyEstateCheck:
     weight = 1.0
     version = 1
     description = "Records what it can see."
+    summary = "spied on"
+    fix_hint = "nothing to fix in {table}"
 
     def __init__(self) -> None:
         self.observed: list[str] = []
@@ -207,3 +209,12 @@ def test_report_records_check_versions():
         "table.primary_key.missing": 1,
         "column.name.cryptic": 1,
     }
+
+
+def test_engine_rejects_a_check_of_neither_kind():
+    class HalfACheck:
+        id = "half"
+        run = None  # looks like a check, but declares almost nothing
+
+    with pytest.raises(TypeError, match=r"not a TableCheck or an EstateCheck; missing: .*fix_hint"):
+        ReadinessEngine([HalfACheck()]).start(FindingList())

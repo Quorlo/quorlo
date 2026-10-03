@@ -3,6 +3,7 @@
 `models` is pure (no I/O); `store` saves and loads runs.
 """
 
+from quorlo.history.findings import CheckGroup, FindingGrouper, FindingQuery, TableFindings
 from quorlo.history.models import (
     RunDiff,
     RunHeader,
@@ -27,7 +28,10 @@ from quorlo.history.store import (
 )
 
 __all__ = [
+    "CheckGroup",
     "FindingChanges",
+    "FindingGrouper",
+    "FindingQuery",
     "RunDiff",
     "RunHeader",
     "RunNotFoundError",
@@ -42,6 +46,7 @@ __all__ = [
     "SqliteRunWriter",
     "StoreError",
     "TableChange",
+    "TableFindings",
     "default_store_path",
     "diff_runs",
     "new_run_id",
