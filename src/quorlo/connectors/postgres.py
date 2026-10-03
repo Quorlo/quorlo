@@ -148,12 +148,18 @@ def parse_type(raw: str, typtype: str = "b") -> DataType:
 Row = Mapping[str, Any]
 
 
+def postgres_location(host: str, port: int, dbname: str) -> str:
+    """'postgres://host:port/db'. A unix socket directory stands in for the host as-is."""
+    return f"postgres://{host}:{port}/{dbname}"
+
+
 def build_database(
     name: str,
     schemas: Iterable[Row],
     tables: Iterable[Row],
     columns: Iterable[Row],
     constraints: Iterable[Row],
+    location: str | None = None,
 ) -> Database:
     """Assemble catalog query rows into the neutral model. Pure, so it is unit-testable."""
     cols_by_table: dict[tuple[str, str], list[Column]] = defaultdict(list)
@@ -213,6 +219,7 @@ def build_database(
     return Database(
         name=name,
         platform=PostgresConnector.name,
+        location=location,
         schemas=tuple(
             Schema(
                 name=s["name"],
@@ -288,7 +295,14 @@ class PostgresConnector:
         tables, columns, constraints = self._run(
             [(_TABLES_SQL, params), (_COLUMNS_SQL, params), (_CONSTRAINTS_SQL, params)]
         )
-        return build_database(db_rows[0]["name"], schema_rows, tables, columns, constraints)
+        return build_database(
+            db_rows[0]["name"], schema_rows, tables, columns, constraints, self._location()
+        )
+
+    def _location(self) -> str:
+        """Server and database from the live connection, so no credential can end up in it."""
+        info = self._connection().info
+        return postgres_location(info.host, info.port, info.dbname)
 
     def close(self) -> None:
         if self._conn is not None:
