@@ -10,6 +10,7 @@ Scan a platform read-only and score how AI-ready each table is.
 
 ```bash
 quorlo scan [--dsn DSN] [--connector NAME] [--schema NAME]... [--details] [--format table|json]
+            [--save | --no-save] [--store PATH]
 ```
 
 | Option | Default | Description |
@@ -19,8 +20,17 @@ quorlo scan [--dsn DSN] [--connector NAME] [--schema NAME]... [--details] [--for
 | `--schema`, `-s` | all non-system schemas | Schema to scan. Repeat for several. An unknown schema is an error. |
 | `--details` | off | After the summary, list every finding. |
 | `--format`, `-f` | `table` | `table` for a terminal summary, `json` for a machine-readable report. |
+| `--save` / `--no-save` | save | Save the run to the [run history](../guides/run-history.md). |
+| `--store` | `$QUORLO_STORE`, else the user data directory | The run history file. |
 
-**Exit codes:** `0` when the scan completed, `2` when it couldn't, for example an unknown connector, a connection failure or an unknown schema. The error is printed to stderr. Today a low score does not change the exit code.
+When the run is saved, the summary ends with how it compares with the previous run of the same database and schemas:
+
+```
+Since last run (2 days ago): 44% → 48% (+4 pts), 3 resolved, 1 new
+Saved as run 20261003T174608Z-baf7f9.
+```
+
+**Exit codes:** `0` when the scan completed, `2` when it couldn't, for example an unknown connector, a connection failure, an unknown schema or an unusable `--store`. The error is printed to stderr. Today a low score does not change the exit code.
 
 ### JSON output
 
@@ -37,7 +47,34 @@ quorlo scan --format json | jq '.tables[] | {table, score}'
 }
 ```
 
-The top level has `database`, `platform`, `score`, `dimensions`, `tables` and `findings_count`. Scores are fractions between 0 and 1, or `null` when nothing was evaluated.
+The top level has `database`, `platform`, `checks` (each check that ran, with its version), `score`, `dimensions`, `tables`, `findings_count` and, when the run was saved, `run_id`. Scores are fractions between 0 and 1, or `null` when nothing was evaluated.
+
+## `quorlo runs`
+
+List saved runs, newest first: id, when, target, score, table and finding counts.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--limit` | `20` | How many runs to list. |
+| `--store` | `$QUORLO_STORE`, else the user data directory | The run history file. |
+
+### `quorlo runs show RUN`
+
+Print the report of a saved run, as `quorlo scan` printed it. `RUN` is a run id or any prefix that matches exactly one run, such as `20261003T1746`. Takes `--details`, `--format` and `--store`.
+
+## `quorlo diff`
+
+Compare two saved runs: scores overall and per question, tables added or removed, which tables changed, and which findings are new or resolved.
+
+```bash
+quorlo diff                  # the latest run against the run before it, for the same target
+quorlo diff BASE             # BASE against the latest run of the same target
+quorlo diff BASE HEAD        # two specific runs
+```
+
+Takes `--format table|json` and `--store`. The comparison warns when the two runs are not strictly comparable: different databases or schemas, or check rules that changed between Quorlo versions. See [run history](../guides/run-history.md) for how findings are matched.
+
+Exits with `2` when a run can't be found, or when there aren't two runs to compare.
 
 ## `quorlo connectors`
 

@@ -23,12 +23,20 @@ class _BaseCheck:
     scope: ClassVar[Scope]
     severity: ClassVar[Severity]
     weight: ClassVar[float] = 1.0
+    version: ClassVar[int] = 1
     description: ClassVar[str]
 
     def applies_to(self, table: Table) -> bool:
         return self.scope is Scope.TABLE or bool(table.columns)
 
-    def _finding(self, table: Table, message: str, remedy: str, column: str | None = None):
+    def _finding(
+        self,
+        table: Table,
+        message: str,
+        remedy: str,
+        column: str | None = None,
+        key: str | None = None,
+    ) -> Finding:
         return Finding(
             check_id=self.id,
             dimension=self.dimension,
@@ -36,6 +44,7 @@ class _BaseCheck:
             scope=self.scope,
             table=table.qualified_name,
             column=column,
+            key=key,
             message=message,
             remedy=remedy,
         )
@@ -235,6 +244,7 @@ class DuplicateSuspected(_BaseCheck):
                     f"Looks like the same data as {other_name}, and neither says which to use.",
                     "Mark the trusted table as certified (a tag, or 'source of truth' in its "
                     "description), and the other as deprecated, or remove one.",
+                    key=other.qualified_name,
                 )
 
 

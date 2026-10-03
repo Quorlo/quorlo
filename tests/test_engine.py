@@ -106,6 +106,7 @@ def test_checks_receive_every_scanned_table():
         scope = Scope.TABLE
         severity = Severity.LOW
         weight = 1.0
+        version = 1
         description = "Records what it can see."
 
         def applies_to(self, table):
@@ -128,3 +129,13 @@ def test_scan_context_lookup():
     ctx = ScanContext.of_tables([make_table("a"), make_table("b")])
     assert ctx.table("db.public.a").name == "a"
     assert ctx.table("db.public.zzz") is None
+
+
+def test_report_records_check_versions():
+    report = evaluate(Database(name="db", platform="test"), CHECKS)
+    assert report.checks == {
+        "table.description.missing": 1,
+        "column.description.missing": 1,
+        "table.primary_key.missing": 1,
+        "column.name.cryptic": 1,
+    }

@@ -138,6 +138,11 @@ class Schema(_Frozen):
 class Database(_Frozen):
     name: str
     platform: str = Field(description="Connector name that produced this, e.g. 'postgres'.")
+    location: str | None = Field(
+        default=None,
+        description="Where the database lives, e.g. 'postgres://db.internal:5432/warehouse'. "
+        "Never contains credentials. Used to tell runs against different servers apart.",
+    )
     schemas: tuple[Schema, ...] = ()
 
     def iter_tables(self) -> Iterator[Table]:

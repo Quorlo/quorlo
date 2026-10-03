@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from statistics import fmean
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from quorlo.models import Database, Table, TableKind
 from quorlo.readiness.base import Check, Dimension, Finding, ScanContext, Scope
@@ -52,6 +52,9 @@ class TableReadiness(_Frozen):
 class ScanReport(_Frozen):
     database: str
     platform: str
+    checks: dict[str, int] = Field(
+        default_factory=dict, description="Every check that ran, by id, with its version."
+    )
     score: float | None
     dimensions: dict[Dimension, float]
     tables: tuple[TableReadiness, ...]
@@ -128,6 +131,7 @@ def evaluate(database: Database, checks: Sequence[Check] = DEFAULT_CHECKS) -> Sc
     return ScanReport(
         database=database.name,
         platform=database.platform,
+        checks={c.id: c.version for c in checks},
         score=fmean(scores) if scores else None,
         dimensions=dimensions,
         tables=tables,

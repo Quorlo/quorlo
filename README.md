@@ -40,9 +40,12 @@ Overall: 44% across 8 tables, 77 findings
   Can I trust it?           14%
   Am I allowed to use it?   88%
   Not scored yet (no checks): lineage
+Saved as run 20261003T174608Z-b2a84e.
 ```
 
 Each problem shows up under the question it gets in the way of. `stg_imp_01` has columns named `c1`, `c2`, `f1` and `f2` and no documentation, so it scores 0% on *Meaning*. `cust_mstr` holds names, emails and phone numbers nobody marked as personal data, so it fails *Governed*. `revenue_daily` and `daily_revenue_v2` look like the same data and neither says which to use, so both fail *Certified*. Almost nothing records when it was last loaded, so *Trust* is low everywhere. `dim_product` gets everything right and scores 100%.
+
+Every scan is saved, so the next one tells you what changed since the last, and `quorlo diff` lists exactly which findings were resolved and which are new.
 
 More options:
 
@@ -50,6 +53,8 @@ More options:
 uv run quorlo scan --details              # list every finding with the column it applies to
 uv run quorlo scan --schema retail_raw    # scan one schema (repeat for more)
 uv run quorlo scan --format json          # machine-readable report
+uv run quorlo diff                        # compare the last two runs
+uv run quorlo runs                        # list saved runs
 uv run quorlo connectors                  # installed connectors and what they may do
 ```
 

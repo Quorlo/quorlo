@@ -10,6 +10,8 @@ Quorlo reads metadata and writes metadata back. It does not copy data out.
 - Row counts come from **catalog statistics** (in Postgres, `pg_class.reltuples`), never from `COUNT(*)`.
 - Sample values will only ever be read when a user explicitly enables it.
 
+- The [run history](../guides/run-history.md) is a local file holding scores, findings and scanned metadata. It never holds table data or credentials.
+
 ## Connectors are read-only for data
 
 Scanning never modifies anything. The Postgres connector opens its connection with `read_only = True`, so every transaction is `READ ONLY` and the **server** rejects writes, not just Quorlo's own queries. It refuses to run on a connection configured for writing.

@@ -4,7 +4,12 @@ import pytest
 from pydantic import SecretStr
 
 from quorlo.connector import ConnectionConfig, Connector, ConnectorError
-from quorlo.connectors.postgres import PostgresConnector, build_database, parse_type
+from quorlo.connectors.postgres import (
+    PostgresConnector,
+    build_database,
+    parse_type,
+    postgres_location,
+)
 from quorlo.models import TableKind, TypeKind
 from quorlo.registry import load_connector
 
@@ -133,3 +138,15 @@ def test_connection_error_hides_password():
     with pytest.raises(ConnectorError) as exc_info, PostgresConnector(config) as conn:
         conn.test_connection()
     assert "hunter2" not in str(exc_info.value)
+
+
+def test_location_has_no_credentials():
+    assert (
+        postgres_location("db.internal", 5432, "warehouse")
+        == "postgres://db.internal:5432/warehouse"
+    )
+
+
+def test_build_database_carries_location():
+    db = build_database("shop", [], [], [], [], location="postgres://h:5432/shop")
+    assert db.location == "postgres://h:5432/shop"

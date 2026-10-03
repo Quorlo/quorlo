@@ -137,3 +137,11 @@ def test_demo_problems_land_in_the_right_dimension(connector):
     # Only dim_product says how fresh it is; the view isn't judged on freshness.
     assert tables["dim_product"].dimensions[Dimension.TRUST] == 1.0
     assert Dimension.TRUST not in tables["v_ord_summary"].dimensions
+
+
+def test_location_comes_from_the_connection_without_credentials(connector):
+    database = connector.scan(["retail_raw"])
+    assert database.location.startswith("postgres://")
+    assert database.location.endswith("/quorlo_demo")
+    assert "@" not in database.location
+    assert "quorlo:quorlo" not in database.location
