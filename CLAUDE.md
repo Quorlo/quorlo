@@ -66,19 +66,22 @@ Prefer making a violation unrepresentable in the code over documenting a rule.
 ```
 src/quorlo/
   models.py          platform-neutral metadata models (Database > Schema > Table > Column)
-  connector.py       Connector protocol (streaming), DatabaseInfo, FetchStats, read_database
-  registry.py        connector discovery via the `quorlo.connectors` entry-point group
-  connectors/postgres/  queries (SQL), runner (snapshot txn + query counting),
+  connectors/        everything a plugin author needs, re-exported from quorlo.connectors:
+    base.py          Connector protocol (streaming), DatabaseInfo, FetchStats, read_database
+    registry.py      discovery via the `quorlo.connectors` entry-point group
+    postgres/        queries (SQL), runner (snapshot txn + query counting),
                      catalog (SchemaAssembler: rows -> models), types, connector
   readiness/         base (Finding, TableCheck, EstateCheck), engine (ReadinessEngine,
                      Assessment, FindingSink), checks/ (one module per question), names
+  history/           runs over time, re-exported from quorlo.history:
+    models.py        RunHeader, ScanRun, diff_runs (pure, no I/O)
+    store/           RunStore protocol (base), schema history (migrations), SQLite backend
   scanner.py         Scanner: fetch -> check -> score -> save, streamed and timed
   stats.py           Phase, PhaseClock, ScanStats
-  history.py         RunHeader, ScanRun, diff_runs (what changed between two runs)
-  store/             RunStore protocol (base), schema history (migrations), SQLite backend
   cli.py, render.py  thin Typer CLI; ReportView, RunsView and other output
 demo/                messy demo schema for the docker-compose Postgres
-tests/               unit tests; tests/integration/ needs a running database
+tests/               mirrors src/ (tests/connectors, tests/history); tests/integration/
+                     needs a running database
 ```
 
 ## Architecture notes
@@ -125,6 +128,8 @@ uv run quorlo scan --connector postgres \
   the data, collaborators behind Protocols, no god modules or long functions, no
   duplication. When touching code that breaks this, refactor it in its own commit.
 - Run lint, format check and unit tests before every commit.
+- Add user-visible changes to the `Unreleased` section of CHANGELOG.md (Keep a Changelog).
+- Test file names must be unique across `tests/` (pytest imports them by basename).
 - Every commit is signed off: `git commit -s` (DCO, see CONTRIBUTING.md).
 - Small, focused commits. Conventional-style subjects: `feat(scope): ...`,
   `fix: ...`, `docs: ...`, `test: ...`, `build: ...`, `ci: ...`.
