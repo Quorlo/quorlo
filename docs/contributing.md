@@ -2,6 +2,10 @@
 
 Quorlo is pre-alpha, so early input has a lot of influence. The most useful contributions right now are real-world problems: messy schemas, cryptic codes, and the questions your agents get wrong. Share them in [Discussions](https://github.com/Quorlo/quorlo/discussions).
 
+## Project conventions
+
+[AGENTS.md](https://github.com/Quorlo/quorlo/blob/main/AGENTS.md) describes how Quorlo is built: principles, package layout, architecture and coding conventions. AI coding agents read it automatically; people should read it before their first change.
+
 ## Development setup
 
 ```bash
