@@ -20,8 +20,8 @@ from quorlo.connectors import (
 )
 from quorlo.connectors.registry import ConnectorInfo
 from quorlo.models import Database, Schema
+from quorlo.output import name_prefix
 from quorlo.readiness import evaluate
-from quorlo.render import _name_prefix
 
 runner = CliRunner()
 
@@ -186,7 +186,7 @@ def test_scan_keeps_schema_in_names_when_several_schemas():
             Schema(name="mart", tables=(make_table("orders", schema="mart"),)),
         ),
     )
-    assert _name_prefix(evaluate(db).report) == "db."
+    assert name_prefix(evaluate(db).report) == "db."
 
 
 # --- run history ---------------------------------------------------------------------

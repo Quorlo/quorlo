@@ -3,7 +3,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from quorlo.history import ScoreChange
-from quorlo.render import _ago, _delta_text, stats_lines
+from quorlo.output import stats_lines
+from quorlo.output.format import ago, delta_text
 from quorlo.stats import Phase, ScanStats
 
 
@@ -18,7 +19,7 @@ from quorlo.stats import Phase, ScanStats
     ],
 )
 def test_delta_matches_the_numbers_shown(before, after, expected):
-    assert _delta_text(ScoreChange(before=before, after=after)).plain == expected
+    assert delta_text(ScoreChange(before=before, after=after)).plain == expected
 
 
 @pytest.mark.parametrize(
@@ -27,7 +28,7 @@ def test_delta_matches_the_numbers_shown(before, after, expected):
 )
 def test_ago(seconds, expected):
     now = datetime(2026, 10, 3, tzinfo=UTC)
-    assert _ago(now - timedelta(seconds=seconds), now) == expected
+    assert ago(now - timedelta(seconds=seconds), now) == expected
 
 
 def test_stats_lines():
